@@ -41,12 +41,10 @@ func main() {
 
 	if len(addressURL.Scheme) <= 0 {
 		addressURL.Scheme = "https"
-		fmt.Println("No HTTP scheme in provided address, Trying HTTPS.")
+		log.Println("No HTTP scheme in provided address, Trying HTTPS.")
 	}
 
-	if addressURL.Path == "/" {
-		addressURL.Path = ""
-	}
+	addressURL.Path = strings.TrimSuffix(addressURL.Path, "/")
 
 	_, err = exec.LookPath(*fileViewer)
 	if err != nil {
@@ -61,9 +59,8 @@ func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for k, v := range listings {
-		fmt.Printf("%d: %s\n", k, v.name)
-	}
+
+	printListings(listings)
 
 	pickNo := -1
 	scanner := bufio.NewScanner(os.Stdin)
@@ -77,9 +74,7 @@ func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 		}
 
 		if strings.ToLower(pickStr) == "p" {
-			for k, v := range listings {
-				fmt.Printf("%d: %s\n", k, v.name)
-			}
+			printListings(listings)
 			continue
 		}
 
@@ -91,7 +86,7 @@ func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 		}
 
 		if pickNo < 0 || pickNo >= len(listings) {
-			log.Printf("Choice must be between %d and %d", 0, len(listings)-1)
+			fmt.Printf("Choice must be between %d and %d\n", 0, len(listings)-1)
 			pickNo = -1
 			continue
 		}
@@ -110,10 +105,19 @@ func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 			addressURL.Path = addressURL.Path + pick.path
 		}
 	case "file":
-		openFile(*addressURL, pick.path, *username, *password, *fileViewer)
+		err = openFile(*addressURL, pick.path, *username, *password, *fileViewer)
+		if err != nil {
+			log.Printf("Error opening file with %s: %s\n", *fileViewer, err)
+		}
 	}
 
 	pickItem(addressURL, username, password, fileViewer)
+}
+
+func printListings(listings []*listItem) {
+	for k, v := range listings {
+		fmt.Printf("%d: %s\n", k, v.name)
+	}
 }
 
 func getListings(addressURL *url.URL, username, password *string) ([]*listItem, error) {
@@ -149,16 +153,14 @@ func getListings(addressURL *url.URL, username, password *string) ([]*listItem, 
 	return listItems, nil
 }
 
-func openFile(addressURL url.URL, filePath, username, password, fileViewer string) {
+func openFile(addressURL url.URL, filePath, username, password, fileViewer string) error {
 	addressURL.User = url.UserPassword(username, password)
 	addressURL.Path = addressURL.Path + filePath
 	runCMD := exec.Command(fileViewer, addressURL.String())
+	runCMD.Stderr = os.Stderr
 	fmt.Println(runCMD)
 
-	err := runCMD.Run()
-	if err != nil {
-		fmt.Printf("Error opening file with %s: %s\n", fileViewer, err)
-	}
+	return runCMD.Run()
 }
 
 func parseList(root *html.Node) ([]*listItem, error) {
