@@ -58,9 +58,20 @@ func pickItem(addressURL *url.URL, username, password *string) {
 	pickNo := -1
 	scanner := bufio.NewScanner(os.Stdin)
 	for pickNo == -1 {
-		fmt.Printf("Enter choice [%d-%d]:", 0, len(listings)-1)
+		fmt.Printf("Enter choice [%d-%d, p, q]:", 0, len(listings)-1)
 		scanner.Scan()
 		pickStr := scanner.Text()
+
+		if strings.ToLower(pickStr) == "q" {
+			os.Exit(0)
+		}
+
+		if strings.ToLower(pickStr) == "p" {
+			for k, v := range listings {
+				fmt.Printf("%d: %s\n", k, v.name)
+			}
+			continue
+		}
 
 		pickNo, err = strconv.Atoi(pickStr)
 		if err != nil {
