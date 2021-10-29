@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type listItem struct {
@@ -22,40 +24,132 @@ type listItem struct {
 	path        string
 }
 
+type Config struct {
+	Username      string
+	Password      string
+	AddressString string
+	AddressURL    *url.URL
+	FileViewer    string
+}
+
 func main() {
+	confDir, err := os.UserConfigDir()
+	if err != nil {
+		log.Printf("Unable to find user config dir: %s", err)
+		confDir, err = os.Getwd()
+		if err != nil {
+			log.Fatalf("Unable to find current working directory dir: %s", err)
+		}
+	}
 	username := flag.String("u", "", "HTTP Username [optional]")
 	password := flag.String("p", "", "HTTP Password [optional]")
 	address := flag.String("a", "", "Root caddy fileserver address [required]")
-	fileViewer := flag.String("o", "mpv", "Program to open files with [optional]")
+	fileViewer := flag.String("o", "", "Program to open files with [optional] [defaults to mpv]")
+	confFile := flag.String("c", confDir+"/kwatch.toml", "Configuration file [optional]")
+	writeToConfig := flag.Bool("w", false, "Write current arguments to config file [optional]")
 	flag.Parse()
 
-	if len(*address) <= 0 {
+	cfg := Config{*username, *password, *address, nil, *fileViewer}
+
+	if *writeToConfig {
+		fmt.Println("Attempting to write current options to config file " + *confFile)
+		err = writeConfig(&cfg, &confDir, confFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	err = readConfig(&cfg, confFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatal(err)
+		}
+	}
+
+	if len(cfg.AddressString) <= 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	addressURL, err := url.Parse(*address)
+	if len(cfg.FileViewer) <= 0 {
+		cfg.FileViewer = "mpv"
+	}
+
+	addressURL, err := url.Parse(cfg.AddressString)
 	if err != nil {
 		log.Fatal(err)
 	}
+	cfg.AddressURL = addressURL
 
-	if len(addressURL.Scheme) <= 0 {
-		addressURL.Scheme = "https"
+	if len(cfg.AddressURL.Scheme) <= 0 {
+		cfg.AddressURL.Scheme = "https"
 		log.Println("No HTTP scheme in provided address, Trying HTTPS.")
 	}
 
-	addressURL.Path = strings.TrimSuffix(addressURL.Path, "/")
+	cfg.AddressURL.Path = strings.TrimSuffix(addressURL.Path, "/")
 
-	_, err = exec.LookPath(*fileViewer)
+	_, err = exec.LookPath(cfg.FileViewer)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pickItem(addressURL, username, password, fileViewer)
+	pickItem(&cfg)
 }
 
-func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
-	listings, err := getListings(addressURL, username, password)
+func writeConfig(cfg *Config, confDir, confFile *string) error {
+	bytes, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(*confDir, os.ModeAppend)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(*confFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(bytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readConfig(cfg *Config, confFile *string) error {
+	var readCfg Config
+	bytes, err := os.ReadFile(*confFile)
+	if err != nil {
+		return err
+	}
+	err = toml.Unmarshal(bytes, &readCfg)
+	if err != nil {
+		return err
+	}
+
+	if len(cfg.Username) <= 0 {
+		cfg.Username = readCfg.Username
+	}
+	if len(cfg.Password) <= 0 {
+		cfg.Password = readCfg.Password
+	}
+	if len(cfg.AddressString) <= 0 {
+		cfg.AddressString = readCfg.AddressString
+	}
+	if len(cfg.FileViewer) <= 0 {
+		cfg.FileViewer = readCfg.FileViewer
+	}
+
+	return nil
+}
+
+func pickItem(cfg *Config) {
+	listings, err := getListings(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,22 +190,22 @@ func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 	switch pick.listingType {
 	case "dir":
 		if pick.path == ".." {
-			oldPath := addressURL.Path
+			oldPath := cfg.AddressURL.Path
 			oldPathSlice := strings.Split(oldPath, "/")
 			newPathSlice := oldPathSlice[:len(oldPathSlice)-1]
 			newPath := strings.Join(newPathSlice, "/")
-			addressURL.Path = newPath
+			cfg.AddressURL.Path = newPath
 		} else {
-			addressURL.Path = addressURL.Path + pick.path
+			cfg.AddressURL.Path = cfg.AddressURL.Path + pick.path
 		}
 	case "file":
-		err = openFile(*addressURL, pick.path, *username, *password, *fileViewer)
+		err = openFile(cfg, pick.path)
 		if err != nil {
-			log.Printf("Error opening file with %s: %s\n", *fileViewer, err)
+			log.Printf("Error opening file with %s: %s\n", cfg.FileViewer, err)
 		}
 	}
 
-	pickItem(addressURL, username, password, fileViewer)
+	pickItem(cfg)
 }
 
 func printListings(listings []*listItem) {
@@ -120,14 +214,14 @@ func printListings(listings []*listItem) {
 	}
 }
 
-func getListings(addressURL *url.URL, username, password *string) ([]*listItem, error) {
-	req, err := http.NewRequest("GET", addressURL.String(), nil)
+func getListings(cfg *Config) ([]*listItem, error) {
+	req, err := http.NewRequest("GET", cfg.AddressURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(*username) > 0 {
-		req.SetBasicAuth(*username, *password)
+	if len(cfg.Username) > 0 {
+		req.SetBasicAuth(cfg.Username, cfg.Password)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -153,10 +247,10 @@ func getListings(addressURL *url.URL, username, password *string) ([]*listItem, 
 	return listItems, nil
 }
 
-func openFile(addressURL url.URL, filePath, username, password, fileViewer string) error {
-	addressURL.User = url.UserPassword(username, password)
-	addressURL.Path = addressURL.Path + filePath
-	runCMD := exec.Command(fileViewer, addressURL.String())
+func openFile(cfg *Config, filePath string) error {
+	cfg.AddressURL.User = url.UserPassword(cfg.Username, cfg.Password)
+	cfg.AddressURL.Path = cfg.AddressURL.Path + filePath
+	runCMD := exec.Command(cfg.FileViewer, cfg.AddressURL.String())
 	runCMD.Stderr = os.Stderr
 	fmt.Println(runCMD)
 
