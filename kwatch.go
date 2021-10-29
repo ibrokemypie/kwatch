@@ -43,6 +43,10 @@ func main() {
 		fmt.Println("No HTTP scheme in provided address, Trying HTTPS.")
 	}
 
+	if addressURL.Path == "/" {
+		addressURL.Path = ""
+	}
+
 	pickItem(addressURL, username, password)
 }
 
