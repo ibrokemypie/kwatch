@@ -26,6 +26,7 @@ func main() {
 	username := flag.String("u", "", "HTTP Username [optional]")
 	password := flag.String("p", "", "HTTP Password [optional]")
 	address := flag.String("a", "", "Root caddy fileserver address [required]")
+	fileViewer := flag.String("o", "mpv", "Program to open files with [optional]")
 	flag.Parse()
 
 	if len(*address) <= 0 {
@@ -47,10 +48,15 @@ func main() {
 		addressURL.Path = ""
 	}
 
-	pickItem(addressURL, username, password)
+	_, err = exec.LookPath(*fileViewer)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pickItem(addressURL, username, password, fileViewer)
 }
 
-func pickItem(addressURL *url.URL, username, password *string) {
+func pickItem(addressURL *url.URL, username, password, fileViewer *string) {
 	listings, err := getListings(addressURL, username, password)
 	if err != nil {
 		log.Fatal(err)
@@ -104,10 +110,10 @@ func pickItem(addressURL *url.URL, username, password *string) {
 			addressURL.Path = addressURL.Path + pick.path
 		}
 	case "file":
-		playMpv(*addressURL, pick.path, *username, *password)
+		openFile(*addressURL, pick.path, *username, *password, *fileViewer)
 	}
 
-	pickItem(addressURL, username, password)
+	pickItem(addressURL, username, password, fileViewer)
 }
 
 func getListings(addressURL *url.URL, username, password *string) ([]*listItem, error) {
@@ -143,15 +149,15 @@ func getListings(addressURL *url.URL, username, password *string) ([]*listItem, 
 	return listItems, nil
 }
 
-func playMpv(addressURL url.URL, filePath string, username, password string) {
+func openFile(addressURL url.URL, filePath, username, password, fileViewer string) {
 	addressURL.User = url.UserPassword(username, password)
 	addressURL.Path = addressURL.Path + filePath
-	mpvCMD := exec.Command("mpv", addressURL.String())
-	fmt.Println(mpvCMD)
+	runCMD := exec.Command(fileViewer, addressURL.String())
+	fmt.Println(runCMD)
 
-	err := mpvCMD.Run()
+	err := runCMD.Run()
 	if err != nil {
-		fmt.Printf("Error opening file in MPV: %s\n", err)
+		fmt.Printf("Error opening file with %s: %s\n", fileViewer, err)
 	}
 }
 
