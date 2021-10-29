@@ -22,46 +22,87 @@ type listItem struct {
 	path        string
 }
 
-var (
-	username string
-	password string
-	address  string
-)
-
-func init() {
-	flag.StringVar(&username, "u", "", "HTTP Username [optional]")
-	flag.StringVar(&password, "p", "", "HTTP Password [optional]")
-	flag.StringVar(&address, "a", "", "Root caddy fileserver address [required]")
-}
-
 func main() {
+	username := flag.String("u", "", "HTTP Username [optional]")
+	password := flag.String("p", "", "HTTP Password [optional]")
+	address := flag.String("a", "", "Root caddy fileserver address [required]")
 	flag.Parse()
 
-	if len(address) <= 0 {
+	if len(*address) <= 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	pickItem([]string{})
+	addressURL, err := url.Parse(*address)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(addressURL.Scheme) <= 0 {
+		addressURL.Scheme = "https"
+		fmt.Println("No HTTP scheme in provided address, Trying HTTPS.")
+	}
+
+	pickItem(addressURL, username, password)
 }
 
-func getListings(path []string) ([]listItem, error) {
-	var pathString string
-	for _, v := range path {
-		pathString += v
+func pickItem(addressURL *url.URL, username, password *string) {
+	listings, err := getListings(addressURL, username, password)
+	if err != nil {
+		log.Fatal(err)
 	}
-	getURL, err := url.Parse(address + pathString)
+	for k, v := range listings {
+		fmt.Printf("%d: %s\n", k, v.name)
+	}
+
+	pickNo := -1
+	scanner := bufio.NewScanner(os.Stdin)
+	for pickNo == -1 {
+		fmt.Printf("Enter choice [%d-%d]:", 0, len(listings)-1)
+		scanner.Scan()
+		pickStr := scanner.Text()
+
+		pickNo, err = strconv.Atoi(pickStr)
+		if err != nil {
+			log.Println(err)
+			pickNo = -1
+			continue
+		}
+
+		if pickNo < 0 || pickNo >= len(listings) {
+			log.Printf("Choice must be between %d and %d", 0, len(listings)-1)
+			pickNo = -1
+			continue
+		}
+	}
+
+	pick := listings[pickNo]
+	switch pick.listingType {
+	case "dir":
+		if pick.path == ".." {
+			oldPath := addressURL.Path
+			oldPathSlice := strings.Split(oldPath, "/")
+			newPathSlice := oldPathSlice[:len(oldPathSlice)-1]
+			newPath := strings.Join(newPathSlice, "/")
+			addressURL.Path = newPath
+		} else {
+			addressURL.Path = addressURL.Path + pick.path
+		}
+	case "file":
+		playMpv(*addressURL, pick.path, *username, *password)
+	}
+
+	pickItem(addressURL, username, password)
+}
+
+func getListings(addressURL *url.URL, username, password *string) ([]*listItem, error) {
+	req, err := http.NewRequest("GET", addressURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("GET", getURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(username) > 0 {
-		req.SetBasicAuth(username, password)
+	if len(*username) > 0 {
+		req.SetBasicAuth(*username, *password)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -87,73 +128,25 @@ func getListings(path []string) ([]listItem, error) {
 	return listItems, nil
 }
 
-func pickItem(currPath []string) {
-	listings, err := getListings(currPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for k, v := range listings {
-		fmt.Printf("%d: %s\n", k, v.name)
-	}
-
-	pickNo := -1
-	scanner := bufio.NewScanner(os.Stdin)
-	for pickNo == -1 {
-		fmt.Printf("Enter choice [%d-%d]:", 0, len(listings)-1)
-		scanner.Scan()
-		pickStr := scanner.Text()
-
-		pickNo, err = strconv.Atoi(pickStr)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		if pickNo < 0 || pickNo >= len(listings) {
-			log.Printf("Choice must be between %d and %d", 0, len(listings)-1)
-			pickNo = -1
-			continue
-		}
-	}
-
-	pick := listings[pickNo]
-	switch pick.listingType {
-	case "dir":
-		if pick.path == ".." {
-			currPath = currPath[:len(currPath)-1]
-		} else {
-			currPath = append(currPath, pick.path)
-		}
-	case "file":
-		playMpv(currPath, pick.path)
-	}
-
-	pickItem(currPath)
-}
-
-func playMpv(currPath []string, filePath string) error {
-	var pathString string
-	for _, v := range currPath {
-		pathString += v
-	}
-
-	fileURL, err := url.Parse(address + pathString + filePath)
-	if err != nil {
-		return err
-	}
-	fileURL.User = url.UserPassword(username, password)
-	mpvCMD := exec.Command("mpv", fileURL.String())
+func playMpv(addressURL url.URL, filePath string, username, password string) {
+	addressURL.User = url.UserPassword(username, password)
+	addressURL.Path = addressURL.Path + filePath
+	mpvCMD := exec.Command("mpv", addressURL.String())
 	fmt.Println(mpvCMD)
 
-	return mpvCMD.Run()
+	err := mpvCMD.Run()
+	if err != nil {
+		fmt.Printf("Error opening file in MPV: %s\n", err)
+	}
 }
 
-func parseList(root *html.Node) ([]listItem, error) {
+func parseList(root *html.Node) ([]*listItem, error) {
 	listingNode, err := getListingNode(root)
 	if err != nil {
 		return nil, err
 	}
 
-	listItems := []listItem{}
+	listItems := []*listItem{}
 	for row := listingNode.FirstChild; row != nil; row = row.NextSibling {
 		item, err := extractListing(row)
 		if err != nil {
@@ -180,14 +173,18 @@ func getListingNode(node *html.Node) (*html.Node, error) {
 	return nil, errors.New("Unable to find the listing table HTML node")
 }
 
-func extractListing(node *html.Node) (listItem, error) {
+func extractListing(node *html.Node) (*listItem, error) {
+	item := new(listItem)
 	for col := node.FirstChild; col != nil; col = col.NextSibling {
 		for child := col.FirstChild; child != nil; child = child.NextSibling {
 			if child.Type == html.ElementNode && child.Data == "a" {
-				var item listItem
 				for _, attr := range child.Attr {
 					if attr.Key == "href" {
-						item.path = attr.Val
+						path, err := url.PathUnescape(attr.Val)
+						if err != nil {
+							return item, err
+						}
+						item.path = path
 					}
 				}
 
@@ -205,6 +202,7 @@ func extractListing(node *html.Node) (listItem, error) {
 
 				if item.path != ".." {
 					item.path = strings.TrimPrefix(item.path, ".")
+					item.path = strings.TrimSuffix(item.path, "/")
 				}
 
 				return item, nil
@@ -213,5 +211,5 @@ func extractListing(node *html.Node) (listItem, error) {
 
 	}
 
-	return listItem{}, errors.New("No listitem could be extracted")
+	return item, errors.New("No listitem could be extracted")
 }
