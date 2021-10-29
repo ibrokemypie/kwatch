@@ -93,7 +93,7 @@ func pickItem(currPath []string) {
 		log.Fatal(err)
 	}
 	for k, v := range listings {
-		fmt.Printf("%d: %s\t%s\n", k, v.name, v.listingType)
+		fmt.Printf("%d: %s\n", k, v.name)
 	}
 
 	pickNo := -1
@@ -116,13 +116,14 @@ func pickItem(currPath []string) {
 	}
 
 	pick := listings[pickNo]
-	if pick.listingType == "dir" {
-		if pick.path != ".." {
-			currPath = append(currPath, pick.path)
-		} else {
+	switch pick.listingType {
+	case "dir":
+		if pick.path == ".." {
 			currPath = currPath[:len(currPath)-1]
+		} else {
+			currPath = append(currPath, pick.path)
 		}
-	} else {
+	case "file":
 		playMpv(currPath, pick.path)
 	}
 
@@ -186,7 +187,7 @@ func extractListing(node *html.Node) (listItem, error) {
 				var item listItem
 				for _, attr := range child.Attr {
 					if attr.Key == "href" {
-						item.path = strings.TrimPrefix(attr.Val, ".")
+						item.path = attr.Val
 					}
 				}
 
@@ -200,6 +201,10 @@ func extractListing(node *html.Node) (listItem, error) {
 					item.listingType = "dir"
 				} else {
 					item.listingType = "file"
+				}
+
+				if item.path != ".." {
+					item.path = strings.TrimPrefix(item.path, ".")
 				}
 
 				return item, nil
