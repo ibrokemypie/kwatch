@@ -28,7 +28,7 @@ type Config struct {
 	Username      string
 	Password      string
 	AddressString string
-	AddressURL    *url.URL
+	AddressURL    url.URL
 	FileViewer    string
 }
 
@@ -49,7 +49,7 @@ func main() {
 	writeToConfig := flag.Bool("w", false, "Write current arguments to config file [optional]")
 	flag.Parse()
 
-	cfg := Config{*username, *password, *address, nil, *fileViewer}
+	cfg := Config{*username, *password, *address, url.URL{}, *fileViewer}
 
 	if *writeToConfig {
 		fmt.Println("Attempting to write current options to config file " + *confFile)
@@ -79,7 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cfg.AddressURL = addressURL
+	cfg.AddressURL = *addressURL
 
 	if len(cfg.AddressURL.Scheme) <= 0 {
 		cfg.AddressURL.Scheme = "https"
@@ -149,63 +149,63 @@ func readConfig(cfg *Config, confFile *string) error {
 }
 
 func pickItem(cfg *Config) {
-	listings, err := getListings(cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	printListings(listings)
-
-	pickNo := -1
-	scanner := bufio.NewScanner(os.Stdin)
-	for pickNo == -1 {
-		fmt.Printf("Enter choice [%d-%d, p, q]:", 0, len(listings)-1)
-		scanner.Scan()
-		pickStr := scanner.Text()
-
-		if strings.ToLower(pickStr) == "q" {
-			os.Exit(0)
-		}
-
-		if strings.ToLower(pickStr) == "p" {
-			printListings(listings)
-			continue
-		}
-
-		pickNo, err = strconv.Atoi(pickStr)
+	for true {
+		listings, err := getListings(cfg)
 		if err != nil {
-			log.Println(err)
-			pickNo = -1
-			continue
+			log.Fatal(err)
 		}
 
-		if pickNo < 0 || pickNo >= len(listings) {
-			fmt.Printf("Choice must be between %d and %d\n", 0, len(listings)-1)
-			pickNo = -1
-			continue
+		printListings(listings)
+
+		pickNo := -1
+		scanner := bufio.NewScanner(os.Stdin)
+		for pickNo == -1 {
+			fmt.Printf("Enter choice [%d-%d, p, q]:", 0, len(listings)-1)
+			scanner.Scan()
+			pickStr := scanner.Text()
+
+			if strings.ToLower(pickStr) == "q" {
+				os.Exit(0)
+			}
+
+			if strings.ToLower(pickStr) == "p" {
+				printListings(listings)
+				continue
+			}
+
+			pickNo, err = strconv.Atoi(pickStr)
+			if err != nil {
+				log.Println(err)
+				pickNo = -1
+				continue
+			}
+
+			if pickNo < 0 || pickNo >= len(listings) {
+				fmt.Printf("Choice must be between %d and %d\n", 0, len(listings)-1)
+				pickNo = -1
+				continue
+			}
+		}
+
+		pick := listings[pickNo]
+		switch pick.listingType {
+		case "dir":
+			if pick.path == ".." {
+				oldPath := cfg.AddressURL.Path
+				oldPathSlice := strings.Split(oldPath, "/")
+				newPathSlice := oldPathSlice[:len(oldPathSlice)-1]
+				newPath := strings.Join(newPathSlice, "/")
+				cfg.AddressURL.Path = newPath
+			} else {
+				cfg.AddressURL.Path = cfg.AddressURL.Path + pick.path
+			}
+		case "file":
+			err = openFile(*cfg, pick.path)
+			if err != nil {
+				log.Printf("Error opening file with %s: %s\n", cfg.FileViewer, err)
+			}
 		}
 	}
-
-	pick := listings[pickNo]
-	switch pick.listingType {
-	case "dir":
-		if pick.path == ".." {
-			oldPath := cfg.AddressURL.Path
-			oldPathSlice := strings.Split(oldPath, "/")
-			newPathSlice := oldPathSlice[:len(oldPathSlice)-1]
-			newPath := strings.Join(newPathSlice, "/")
-			cfg.AddressURL.Path = newPath
-		} else {
-			cfg.AddressURL.Path = cfg.AddressURL.Path + pick.path
-		}
-	case "file":
-		err = openFile(cfg, pick.path)
-		if err != nil {
-			log.Printf("Error opening file with %s: %s\n", cfg.FileViewer, err)
-		}
-	}
-
-	pickItem(cfg)
 }
 
 func printListings(listings []*listItem) {
@@ -247,7 +247,7 @@ func getListings(cfg *Config) ([]*listItem, error) {
 	return listItems, nil
 }
 
-func openFile(cfg *Config, filePath string) error {
+func openFile(cfg Config, filePath string) error {
 	cfg.AddressURL.User = url.UserPassword(cfg.Username, cfg.Password)
 	cfg.AddressURL.Path = cfg.AddressURL.Path + filePath
 	runCMD := exec.Command(cfg.FileViewer, cfg.AddressURL.String())
