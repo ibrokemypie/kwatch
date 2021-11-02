@@ -83,7 +83,7 @@ func startListUpdate() tea.Msg {
 	return startListUpdateMsg{}
 }
 
-func selectItem(i item, m model) tea.Cmd {
+func selectItem(i item, m *model) tea.Cmd {
 	switch i.listingType {
 	case "dir":
 		if i.path == ".." {
@@ -141,7 +141,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			i, ok := m.list.SelectedItem().(item)
 			if ok {
-				cmds = append(cmds, selectItem(i, m))
+				cmds = append(cmds, selectItem(i, &m))
 			}
 		}
 
@@ -156,7 +156,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseLeft:
 			i, ok := m.list.SelectedItem().(item)
 			if ok {
-				cmds = append(cmds, selectItem(i, m))
+				cmds = append(cmds, selectItem(i, &m))
 			}
 		}
 
