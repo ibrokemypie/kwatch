@@ -45,11 +45,9 @@ type Config struct {
 }
 
 type model struct {
-	quitting bool
-	list     list.Model
-	items    []item
-	path     []string
-	config   *Config
+	list   list.Model
+	path   []string
+	config *Config
 }
 
 type startListUpdateMsg struct{}
@@ -379,7 +377,7 @@ func getListingNode(node *html.Node) (*html.Node, error) {
 			return listingNode, nil
 		}
 	}
-	return nil, errors.New("Unable to find the listing table HTML node")
+	return nil, errors.New("unable to find the listing table HTML node")
 }
 
 func extractListing(node *html.Node) (item, error) {
@@ -420,5 +418,5 @@ func extractListing(node *html.Node) (item, error) {
 
 	}
 
-	return item, errors.New("No listitem could be extracted")
+	return item, errors.New("no listitem could be extracted")
 }
