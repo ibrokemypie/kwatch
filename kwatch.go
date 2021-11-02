@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,26 +9,152 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pelletier/go-toml/v2"
 )
 
-type listItem struct {
+type item struct {
 	listingType string
 	name        string
 	path        string
 }
 
+func (i item) Title() string {
+	return i.name
+}
+
+func (i item) Description() string {
+	return strings.ToTitle(i.listingType)
+}
+
+func (i item) FilterValue() string {
+	return i.name
+}
+
 type Config struct {
-	Username      string
-	Password      string
-	AddressString string
-	AddressURL    url.URL
-	FileViewer    string
+	Username   string
+	Password   string
+	Address    *url.URL
+	FileViewer string
+}
+
+type model struct {
+	quitting bool
+	list     list.Model
+	items    []item
+	path     []string
+	config   *Config
+}
+
+type startListUpdateMsg struct{}
+
+type endListUpdateMsg struct {
+	itemList []list.Item
+}
+
+type errorMsg struct {
+	err error
+}
+
+func printError(err error) tea.Cmd {
+	return func() tea.Msg {
+		return errorMsg{err}
+	}
+}
+
+func updateList(cfg *Config, path []string) tea.Cmd {
+	return func() tea.Msg {
+		itemList, err := getListings(cfg, path)
+		if err != nil {
+			return printError(err)
+		}
+
+		return endListUpdateMsg{itemList}
+	}
+}
+
+func startListUpdate() tea.Msg {
+	return startListUpdateMsg{}
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(
+		m.list.StartSpinner(),
+		startListUpdate,
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case errorMsg:
+		m.list.StopSpinner()
+		cmds = append(cmds, m.list.NewStatusMessage(msg.err.Error()))
+
+	case startListUpdateMsg:
+		cmds = append(cmds, m.list.StartSpinner(), updateList(m.config, m.path))
+
+	case endListUpdateMsg:
+		m.list.StopSpinner()
+		m.list.ResetFilter()
+		m.list.ResetSelected()
+		cmds = append(cmds, m.list.SetItems(msg.itemList))
+
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height)
+
+	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
+
+		switch msg.Type {
+		case tea.KeyEnter:
+			i, ok := m.list.SelectedItem().(item)
+			if ok {
+				switch i.listingType {
+				case "dir":
+					if i.path == ".." {
+						m.path = m.path[:len(m.path)-1]
+					} else {
+						m.path = append(m.path, i.path)
+					}
+
+					cmds = append(cmds, m.list.StartSpinner(), updateList(m.config, m.path))
+				case "file":
+					err := openFile(m.config, m.path, i.path)
+					if err != nil {
+						cmds = append(cmds, printError(err))
+					}
+				}
+			}
+		}
+
+	case tea.MouseMsg:
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.list.CursorUp()
+
+		case tea.MouseWheelDown:
+			m.list.CursorDown()
+		}
+	}
+
+	m.list, cmd = m.list.Update(msg)
+	cmds = append(cmds, cmd)
+	return m, tea.Batch(cmds...)
+}
+
+func (m model) View() string {
+	return m.list.View()
 }
 
 func main() {
@@ -41,15 +166,28 @@ func main() {
 			log.Fatalf("Unable to find current working directory dir: %s", err)
 		}
 	}
+
 	username := flag.String("u", "", "HTTP Username [optional]")
 	password := flag.String("p", "", "HTTP Password [optional]")
-	address := flag.String("a", "", "Root caddy fileserver address [required]")
+	addressString := flag.String("a", "", "Root caddy fileserver address [required]")
 	fileViewer := flag.String("o", "", "Program to open files with [optional] [defaults to mpv]")
 	confFile := flag.String("c", confDir+"/kwatch.toml", "Configuration file [optional]")
 	writeToConfig := flag.Bool("w", false, "Write current arguments to config file [optional]")
 	flag.Parse()
 
-	cfg := Config{*username, *password, *address, url.URL{}, *fileViewer}
+	var address *url.URL
+	if len(*addressString) > 0 {
+		address, err = url.Parse(*addressString)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if len(address.Scheme) <= 0 {
+			fmt.Println("Address requires scheme (http/https)")
+			os.Exit(1)
+		}
+	}
+
+	cfg := Config{*username, *password, address, *fileViewer}
 
 	if *writeToConfig {
 		fmt.Println("Attempting to write current options to config file " + *confFile)
@@ -66,34 +204,40 @@ func main() {
 		}
 	}
 
-	if len(cfg.AddressString) <= 0 {
+	if cfg.Address == nil {
 		flag.Usage()
 		os.Exit(1)
 	}
 
+	initialPath := strings.Split(cfg.Address.Path, "/")
+	cfg.Address.Path = ""
+
 	if len(cfg.FileViewer) <= 0 {
 		cfg.FileViewer = "mpv"
 	}
-
-	addressURL, err := url.Parse(cfg.AddressString)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cfg.AddressURL = *addressURL
-
-	if len(cfg.AddressURL.Scheme) <= 0 {
-		cfg.AddressURL.Scheme = "https"
-		log.Println("No HTTP scheme in provided address, Trying HTTPS.")
-	}
-
-	cfg.AddressURL.Path = strings.TrimSuffix(addressURL.Path, "/")
 
 	_, err = exec.LookPath(cfg.FileViewer)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pickItem(&cfg)
+	m := model{
+		list:   list.NewModel([]list.Item{}, list.NewDefaultDelegate(), 0, 0),
+		config: &cfg,
+		path:   initialPath,
+	}
+
+	m.list.Title = "Pick file/directory"
+	m.list.SetShowPagination(false)
+	m.list.StatusMessageLifetime = 5 * time.Second
+
+	p := tea.NewProgram(m, tea.WithMouseCellMotion())
+	p.EnterAltScreen()
+
+	if err := p.Start(); err != nil {
+		log.Fatal(err)
+	}
+
 }
 
 func writeConfig(cfg *Config, confDir, confFile *string) error {
@@ -138,8 +282,8 @@ func readConfig(cfg *Config, confFile *string) error {
 	if len(cfg.Password) <= 0 {
 		cfg.Password = readCfg.Password
 	}
-	if len(cfg.AddressString) <= 0 {
-		cfg.AddressString = readCfg.AddressString
+	if cfg.Address == nil {
+		cfg.Address = readCfg.Address
 	}
 	if len(cfg.FileViewer) <= 0 {
 		cfg.FileViewer = readCfg.FileViewer
@@ -148,74 +292,8 @@ func readConfig(cfg *Config, confFile *string) error {
 	return nil
 }
 
-func pickItem(cfg *Config) {
-	for true {
-		listings, err := getListings(cfg)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		printListings(listings)
-
-		pickNo := -1
-		scanner := bufio.NewScanner(os.Stdin)
-		for pickNo == -1 {
-			fmt.Printf("Enter choice [%d-%d, p, q]:", 0, len(listings)-1)
-			scanner.Scan()
-			pickStr := scanner.Text()
-
-			if strings.ToLower(pickStr) == "q" {
-				os.Exit(0)
-			}
-
-			if strings.ToLower(pickStr) == "p" {
-				printListings(listings)
-				continue
-			}
-
-			pickNo, err = strconv.Atoi(pickStr)
-			if err != nil {
-				log.Println(err)
-				pickNo = -1
-				continue
-			}
-
-			if pickNo < 0 || pickNo >= len(listings) {
-				fmt.Printf("Choice must be between %d and %d\n", 0, len(listings)-1)
-				pickNo = -1
-				continue
-			}
-		}
-
-		pick := listings[pickNo]
-		switch pick.listingType {
-		case "dir":
-			if pick.path == ".." {
-				oldPath := cfg.AddressURL.Path
-				oldPathSlice := strings.Split(oldPath, "/")
-				newPathSlice := oldPathSlice[:len(oldPathSlice)-1]
-				newPath := strings.Join(newPathSlice, "/")
-				cfg.AddressURL.Path = newPath
-			} else {
-				cfg.AddressURL.Path = cfg.AddressURL.Path + pick.path
-			}
-		case "file":
-			err = openFile(*cfg, pick.path)
-			if err != nil {
-				log.Printf("Error opening file with %s: %s\n", cfg.FileViewer, err)
-			}
-		}
-	}
-}
-
-func printListings(listings []*listItem) {
-	for k, v := range listings {
-		fmt.Printf("%d: %s\n", k, v.name)
-	}
-}
-
-func getListings(cfg *Config) ([]*listItem, error) {
-	req, err := http.NewRequest("GET", cfg.AddressURL.String(), nil)
+func getListings(cfg *Config, path []string) ([]list.Item, error) {
+	req, err := http.NewRequest("GET", cfg.Address.String()+strings.Join(path, "/"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -247,23 +325,23 @@ func getListings(cfg *Config) ([]*listItem, error) {
 	return listItems, nil
 }
 
-func openFile(cfg Config, filePath string) error {
-	cfg.AddressURL.User = url.UserPassword(cfg.Username, cfg.Password)
-	cfg.AddressURL.Path = cfg.AddressURL.Path + filePath
-	runCMD := exec.Command(cfg.FileViewer, cfg.AddressURL.String())
-	runCMD.Stderr = os.Stderr
-	fmt.Println(runCMD)
+func openFile(cfg *Config, path []string, filePath string) error {
+	addressCopy := cfg.Address
+
+	addressCopy.User = url.UserPassword(cfg.Username, cfg.Password)
+	addressCopy.Path = strings.Join(path, "/") + filePath
+	runCMD := exec.Command(cfg.FileViewer, addressCopy.String())
 
 	return runCMD.Run()
 }
 
-func parseList(root *html.Node) ([]*listItem, error) {
+func parseList(root *html.Node) ([]list.Item, error) {
 	listingNode, err := getListingNode(root)
 	if err != nil {
 		return nil, err
 	}
 
-	listItems := []*listItem{}
+	listItems := []list.Item{}
 	for row := listingNode.FirstChild; row != nil; row = row.NextSibling {
 		item, err := extractListing(row)
 		if err != nil {
@@ -290,8 +368,8 @@ func getListingNode(node *html.Node) (*html.Node, error) {
 	return nil, errors.New("Unable to find the listing table HTML node")
 }
 
-func extractListing(node *html.Node) (*listItem, error) {
-	item := new(listItem)
+func extractListing(node *html.Node) (item, error) {
+	item := item{}
 	for col := node.FirstChild; col != nil; col = col.NextSibling {
 		for child := col.FirstChild; child != nil; child = child.NextSibling {
 			if child.Type == html.ElementNode && child.Data == "a" {

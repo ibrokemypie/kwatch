@@ -13,7 +13,7 @@ a little tui interface to play media from a caddy fileserver.
 
 ### usage:
 
-use standard input to interact with the program. enter q to quit, p to reprint current folder listing or numbers to pick a selection from the listing.
+pick directories to explore or files to open with the keyboard, selecting with enter. `/` can be used to fuzzy find in the list.
 
 files will be opened with the chosen application over http(s), folders will be entered and their contents listed for selection.
 
