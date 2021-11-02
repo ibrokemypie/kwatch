@@ -83,6 +83,27 @@ func startListUpdate() tea.Msg {
 	return startListUpdateMsg{}
 }
 
+func selectItem(i item, m model) tea.Cmd {
+	switch i.listingType {
+	case "dir":
+		if i.path == ".." {
+			m.path = m.path[:len(m.path)-1]
+		} else {
+			m.path = append(m.path, i.path)
+		}
+
+		return tea.Batch(m.list.StartSpinner(), updateList(m.config, m.path))
+
+	case "file":
+		err := openFile(m.config, m.path, i.path)
+		if err != nil {
+			return printError(err)
+		}
+	}
+
+	return nil
+}
+
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		m.list.StartSpinner(),
@@ -120,21 +141,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			i, ok := m.list.SelectedItem().(item)
 			if ok {
-				switch i.listingType {
-				case "dir":
-					if i.path == ".." {
-						m.path = m.path[:len(m.path)-1]
-					} else {
-						m.path = append(m.path, i.path)
-					}
-
-					cmds = append(cmds, m.list.StartSpinner(), updateList(m.config, m.path))
-				case "file":
-					err := openFile(m.config, m.path, i.path)
-					if err != nil {
-						cmds = append(cmds, printError(err))
-					}
-				}
+				cmds = append(cmds, selectItem(i, m))
 			}
 		}
 
@@ -145,7 +152,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.MouseWheelDown:
 			m.list.CursorDown()
+
+		case tea.MouseLeft:
+			i, ok := m.list.SelectedItem().(item)
+			if ok {
+				cmds = append(cmds, selectItem(i, m))
+			}
 		}
+
 	}
 
 	m.list, cmd = m.list.Update(msg)
