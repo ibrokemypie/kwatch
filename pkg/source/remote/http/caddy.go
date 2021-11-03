@@ -50,11 +50,7 @@ func extractListing(node *html.Node) (source.Item, error) {
 			if child.Type == html.ElementNode && child.Data == "a" {
 				for _, attr := range child.Attr {
 					if attr.Key == "href" {
-						path, err := url.PathUnescape(attr.Val)
-						if err != nil {
-							return item, err
-						}
-						item.Path = path
+						item.Path = attr.Val
 					}
 				}
 
@@ -71,8 +67,13 @@ func extractListing(node *html.Node) (source.Item, error) {
 				}
 
 				if item.Path != ".." {
+					item.Path = strings.Replace(item.Path, "/", "", -1)
 					item.Path = strings.TrimPrefix(item.Path, ".")
-					item.Path = strings.TrimSuffix(item.Path, "/")
+					cleanPath, err := url.PathUnescape(item.Path)
+					if err != nil {
+						return item, err
+					}
+					item.Path = cleanPath
 				}
 
 				return item, nil

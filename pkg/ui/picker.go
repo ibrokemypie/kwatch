@@ -1,8 +1,7 @@
 package ui
 
 import (
-	"errors"
-	"time"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,26 +11,18 @@ import (
 	"github.com/ibrokemypie/kwatch/pkg/source/remote/http"
 )
 
-type startListUpdateMsg struct{}
+type initialiseListMsg struct{}
 
-func startListUpdate() tea.Msg {
-	return startListUpdateMsg{}
+func initialiseListCmd() tea.Msg {
+	return initialiseListMsg{}
 }
 
 type endListUpdateMsg struct {
 	itemList []list.Item
+	newPath  []string
 }
 
-func updateList(cfg *cfg.Config, path []string) tea.Cmd {
-	return func() tea.Msg {
-		itemList, err := http.GetItems(cfg, path)
-		if err != nil {
-			return errorMsg{err}
-		}
-
-		return endListUpdateMsg{itemList}
-	}
-}
+type endFileOpenMsg struct{}
 
 type pickerModel struct {
 	list    list.Model
@@ -41,29 +32,51 @@ type pickerModel struct {
 }
 
 func (m pickerModel) Init() tea.Cmd {
-	return tea.Batch(
-		m.list.StartSpinner(),
-		startListUpdate,
-	)
+	return initialiseListCmd
 }
 
-func pickItem(i source.Item, m *pickerModel) tea.Cmd {
+func (m pickerModel) changeDir(path string) tea.Cmd {
 	m.loading = true
+
+	var newPath []string
+	if path == "" {
+		newPath = m.path
+	} else if path == ".." {
+		newPath = m.path[:len(m.path)-1]
+	} else {
+		newPath = append(m.path, path)
+	}
+
+	return func() tea.Msg {
+		itemList, err := http.GetItems(m.config, newPath)
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		return endListUpdateMsg{itemList, newPath}
+	}
+}
+
+func (m pickerModel) openFile(filePath string) tea.Cmd {
+	m.loading = true
+
+	return func() tea.Msg {
+		err := file.OpenFile(m.config, m.path, filePath)
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		return endFileOpenMsg{}
+	}
+}
+
+func (m *pickerModel) pickItem(i source.Item) tea.Cmd {
 	switch i.ListingType {
 	case "dir":
-		if i.Path == ".." {
-			m.path = m.path[:len(m.path)-1]
-		} else {
-			m.path = append(m.path, i.Path)
-		}
-
-		return tea.Batch(m.list.StartSpinner(), updateList(m.config, m.path))
+		return m.changeDir(i.Path)
 
 	case "file":
-		err := file.OpenFile(m.config, m.path, i.Path)
-		if err != nil {
-			return errorCmd(err)
-		}
+		return m.openFile(i.Path)
 	}
 
 	return nil
@@ -76,23 +89,28 @@ func (m pickerModel) Update(msg tea.Msg) (pickerModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case errorMsg:
 		m.list.StopSpinner()
-		m.list.NewStatusMessage(msg.err.Error())
 		m.loading = false
 
-	case startListUpdateMsg:
-
-		cmds = append(cmds, m.list.StartSpinner(), updateList(m.config, m.path))
+	case initialiseListMsg:
+		cmds = append(cmds, m.list.StartSpinner(), m.changeDir(""))
 
 	case endListUpdateMsg:
 		m.list.StopSpinner()
 		m.list.ResetFilter()
 		m.list.ResetSelected()
 		m.loading = false
+		m.list.Title = "/" + strings.Join(msg.newPath, "/")
+		m.path = msg.newPath
 
-		cmds = append(cmds, errorCmd(errors.New("")), m.list.SetItems(msg.itemList))
+		cmds = append(cmds, clearErrorCmd, m.list.SetItems(msg.itemList))
+
+	case endFileOpenMsg:
+		m.list.StopSpinner()
+		m.loading = false
+		cmds = append(cmds, clearErrorCmd)
 
 	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height)
+		m.list.SetSize(msg.Width, msg.Height-1)
 
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
@@ -107,7 +125,7 @@ func (m pickerModel) Update(msg tea.Msg) (pickerModel, tea.Cmd) {
 		case tea.KeyEnter:
 			i, ok := m.list.SelectedItem().(source.Item)
 			if ok {
-				cmds = append(cmds, pickItem(i, &m))
+				cmds = append(cmds, m.list.StartSpinner(), m.pickItem(i))
 			}
 		}
 
@@ -123,11 +141,6 @@ func (m pickerModel) Update(msg tea.Msg) (pickerModel, tea.Cmd) {
 		case tea.MouseWheelDown:
 			m.list.CursorDown()
 
-		case tea.MouseLeft:
-			i, ok := m.list.SelectedItem().(source.Item)
-			if ok {
-				cmds = append(cmds, pickItem(i, &m))
-			}
 		}
 	}
 
@@ -137,20 +150,21 @@ func (m pickerModel) Update(msg tea.Msg) (pickerModel, tea.Cmd) {
 }
 
 func (m pickerModel) View() string {
-	return m.list.View()
+	view := m.list.View()
+
+	return view
 }
 
-func newPicker(config *cfg.Config, initialPath []string) pickerModel {
+func newPicker(config *cfg.Config) pickerModel {
 	m := pickerModel{
 		list:    list.NewModel([]list.Item{}, list.NewDefaultDelegate(), 0, 0),
 		config:  config,
-		path:    initialPath,
+		path:    []string{},
 		loading: false,
 	}
 
-	m.list.Title = "Pick file/directory"
+	m.list.Title = "/"
 	m.list.SetShowPagination(false)
-	m.list.StatusMessageLifetime = 15 * time.Second
 
 	return m
 }

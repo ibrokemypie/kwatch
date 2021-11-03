@@ -19,7 +19,11 @@ const (
 )
 
 func GetItems(cfg *cfg.Config, path []string) ([]list.Item, error) {
-	req, err := http.NewRequest("GET", cfg.Address.String()+strings.Join(path, "/"), nil)
+	addressCopy := cfg.Address
+
+	addressCopy.Path = "/" + strings.Join(path, "/")
+
+	req, err := http.NewRequest("GET", addressCopy.String(), nil)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
 	"github.com/ibrokemypie/kwatch/pkg/ui"
@@ -70,7 +69,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	initialPath := strings.Split(config.Address.Path, "/")
 	config.Address.Path = ""
 
 	if len(config.FileViewer) <= 0 {
@@ -82,8 +80,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	program := ui.NewProgram(config, initialPath)
-	program.EnterAltScreen()
+	program := ui.NewProgram(config)
 
 	if err := program.Start(); err != nil {
 		log.Fatal(err)
