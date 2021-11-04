@@ -9,14 +9,19 @@ import (
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
 )
 
-func OpenFile(cfg *cfg.Config, path []string, filePath string) error {
-	addressCopy := cfg.Address
+func OpenFile(config *cfg.Config, openBookmark int, path []string, filePath string) error {
+	bookmark := config.Bookmarks[openBookmark]
 
-	addressCopy.User = url.UserPassword(cfg.Username, cfg.Password)
-	addressCopy.Path = "/" + strings.Join(path, "/") + "/" + filePath
-	runCMD := exec.Command(cfg.FileViewer, addressCopy.String())
+	address, err := url.Parse(bookmark.Address)
+	if err != nil {
+		return err
+	}
 
-	err := runCMD.Run()
+	address.User = url.UserPassword(bookmark.Username, bookmark.Password)
+	address.Path = "/" + strings.Join(path, "/") + "/" + filePath
+	runCMD := exec.Command(config.FileViewer, address.String())
+
+	err = runCMD.Run()
 	if err != nil {
 		return fmt.Errorf("%s: %s", runCMD.String(), err.Error())
 	}

@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -18,18 +19,23 @@ const (
 	apache
 )
 
-func GetItems(cfg *cfg.Config, path []string) ([]list.Item, error) {
-	addressCopy := cfg.Address
+func GetItems(config *cfg.Config, openBookmark int, path []string) ([]list.Item, error) {
+	bookmark := config.Bookmarks[openBookmark]
 
-	addressCopy.Path = "/" + strings.Join(path, "/")
-
-	req, err := http.NewRequest("GET", addressCopy.String(), nil)
+	address, err := url.Parse(bookmark.Address)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(cfg.Username) > 0 {
-		req.SetBasicAuth(cfg.Username, cfg.Password)
+	address.Path = strings.Join(path, "/")
+
+	req, err := http.NewRequest("GET", address.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(bookmark.Username) > 0 {
+		req.SetBasicAuth(bookmark.Username, bookmark.Password)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
