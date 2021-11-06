@@ -22,7 +22,17 @@ type mainModel struct {
 	filePickerModel
 	bookmarkPickerModel
 	bookmarkEditorModel
-	err error
+	width  int
+	height int
+	err    error
+}
+
+func (m *mainModel) setSize(width, height int) {
+	m.width = width
+	m.height = height
+	m.filePickerModel.setSize(width, height-1)
+	m.bookmarkPickerModel.setSize(width, height-1)
+	m.bookmarkEditorModel.setSize(width, height-1)
 }
 
 func (m mainModel) Init() tea.Cmd {
@@ -34,6 +44,9 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.setSize(msg.Width, msg.Height)
+
 	case errorMsg:
 		m.err = msg
 

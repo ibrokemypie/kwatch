@@ -19,6 +19,10 @@ type filePickerModel struct {
 	loading      bool
 }
 
+func (m *filePickerModel) setSize(width, height int) {
+	m.list.SetSize(width, height)
+}
+
 func (m filePickerModel) Init() tea.Cmd {
 	return initialiseListCmd
 }
@@ -110,9 +114,6 @@ func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
 		m.list.StopSpinner()
 		m.loading = false
 		cmds = append(cmds, clearErrorCmd)
-
-	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height-1)
 
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {

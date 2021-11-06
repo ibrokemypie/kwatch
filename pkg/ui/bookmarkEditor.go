@@ -13,13 +13,18 @@ import (
 )
 
 var (
-	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle  = focusedStyle.Copy()
-	noStyle      = lipgloss.NewStyle()
-	helpStyle    = blurredStyle.Copy()
+	blurredStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
+	focusedStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"})
+	cursorStyle        = focusedStyle.Copy()
+	helpStyle          = blurredStyle.Copy()
+	focusedButtonStyle = focusedStyle.Copy().Padding(0, 1)
+	blurredButtonStyle = blurredStyle.Copy().Padding(0, 1)
+	titleBarStyle      = lipgloss.NewStyle().Padding(0, 0, 1, 2)
+	titleStyle         = lipgloss.NewStyle().
+				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color("230")).
+				Padding(0, 1)
 )
-
 
 type bookmarkEditorModel struct {
 	config        *cfg.Config
@@ -28,6 +33,17 @@ type bookmarkEditorModel struct {
 	inputs        []textinput.Model
 	inputCount    int
 	focusIndex    int
+	width         int
+	height        int
+}
+
+func (m *bookmarkEditorModel) setSize(width, height int) {
+	m.width = width
+	m.height = height
+
+	for _, input := range m.inputs {
+		input.Width = width
+	}
 }
 
 func (m bookmarkEditorModel) Init() tea.Cmd {
@@ -98,11 +114,17 @@ func (m *bookmarkEditorModel) updateInputStyles() tea.Cmd {
 		}
 		// Remove focused state
 		m.inputs[i].Blur()
-		m.inputs[i].PromptStyle = noStyle
-		m.inputs[i].TextStyle = noStyle
+		m.inputs[i].PromptStyle = blurredStyle
+		m.inputs[i].TextStyle = blurredStyle
 	}
 
 	return tea.Batch(cmds...)
+}
+
+func (m *bookmarkEditorModel) clearInputs() {
+	for i := range m.inputs {
+		m.inputs[i].Reset()
+	}
 }
 
 func (m bookmarkEditorModel) Update(msg tea.Msg) (bookmarkEditorModel, tea.Cmd) {
@@ -118,11 +140,13 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (bookmarkEditorModel, tea.Cmd) 
 	case newBookmarkMsg:
 		m.createNew = true
 		m.focusIndex = 0
+		m.clearInputs()
 		cmds = append(cmds, m.updateInputStyles())
 
 	case editBookmarkMsg:
 		m.bookmarkIndex = msg.bookmarkIndex
 		m.createNew = false
+		m.clearInputs()
 
 		bookmark := m.config.Bookmarks[m.bookmarkIndex]
 
@@ -173,28 +197,71 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (bookmarkEditorModel, tea.Cmd) 
 	return m, tea.Batch(cmds...)
 }
 
+func (m bookmarkEditorModel) inputsView() string {
+	var (
+		sections []string
+	)
+
+	for _, input := range m.inputs {
+		inputView := lipgloss.NewStyle().Padding(0, 0, 0, 2).Render(input.View())
+		sections = append(sections, inputView)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m bookmarkEditorModel) titleView() string {
+	var title string
+	var view string
+
+	if m.createNew {
+		title = "New Bookmark"
+	} else {
+		title = m.config.Bookmarks[m.bookmarkIndex].Title()
+	}
+
+	view += titleStyle.Render(title)
+
+	return titleBarStyle.Render(view)
+}
+
 func (m bookmarkEditorModel) View() string {
-	var b strings.Builder
+	var (
+		sections    []string
+		buttons     []string
+		availHeight = m.height
+	)
 
-	for i := range m.inputs {
-		b.WriteString(m.inputs[i].View())
-		if i < len(m.inputs)-1 {
-			b.WriteRune('\n')
-		}
-	}
+	titleView := m.titleView()
+	sections = append(sections, titleView)
+	availHeight -= lipgloss.Height(titleView)
 
-	submitButton := blurredStyle.Render("Submit")
+	var submitView string
 	if m.focusIndex == m.inputCount-1 {
-		submitButton = focusedStyle.Render("Submit")
+		submitView = focusedButtonStyle.Render("Submit")
+	} else {
+		submitView = blurredButtonStyle.Render("Submit")
 	}
+	buttons = append(buttons, submitView)
 
-	cancelButton := blurredStyle.Render("Cancel")
+	var cancelView string
 	if m.focusIndex == m.inputCount {
-		cancelButton = focusedStyle.Render("Cancel")
+		cancelView = focusedButtonStyle.Render("Cancel")
+	} else {
+		cancelView = blurredButtonStyle.Render("Cancel")
 	}
-	fmt.Fprintf(&b, "\n\n%s\t%s\n\n", submitButton, cancelButton)
+	buttons = append(buttons, cancelView)
 
-	return b.String()
+	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttons...)
+	availHeight -= lipgloss.Height(buttonsView)
+
+	inputsView := lipgloss.NewStyle().Height(availHeight).Render(m.inputsView())
+
+	sections = append(sections, inputsView)
+
+	sections = append(sections, buttonsView)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func newBookmarkEditor(config *cfg.Config) bookmarkEditorModel {

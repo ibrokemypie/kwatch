@@ -12,6 +12,10 @@ type bookmarkPickerModel struct {
 	list         list.Model
 }
 
+func (m *bookmarkPickerModel) setSize(width, height int) {
+	m.list.SetSize(width, height)
+}
+
 func (m bookmarkPickerModel) Init() tea.Cmd {
 	return nil
 }
@@ -21,9 +25,6 @@ func (m bookmarkPickerModel) Update(msg tea.Msg) (bookmarkPickerModel, tea.Cmd) 
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height-1)
-
 	case saveBookmarkMsg:
 		bookmarkList := []list.Item{}
 		for _, bookmark := range m.config.Bookmarks {
