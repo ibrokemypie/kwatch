@@ -15,34 +15,6 @@ const (
 	bookmarkEditor
 )
 
-type changeViewMsg struct {
-	newView viewName
-}
-
-func changeViewCmd(newView viewName) tea.Cmd {
-	return func() tea.Msg {
-		return changeViewMsg{newView}
-	}
-}
-
-type errorMsg struct {
-	err error
-}
-
-func (e errorMsg) Error() string { return e.err.Error() }
-
-func errorCmd(err error) tea.Cmd {
-	return func() tea.Msg {
-		return errorMsg{err}
-	}
-}
-
-type clearErrorMsg struct{}
-
-func clearErrorCmd() tea.Msg {
-	return clearErrorMsg{}
-}
-
 type mainModel struct {
 	config       *cfg.Config
 	confFilePath string

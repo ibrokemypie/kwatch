@@ -12,16 +12,6 @@ type bookmarkPickerModel struct {
 	list         list.Model
 }
 
-type updateOpenBookmarkMsg struct {
-	newOpenBookmark int
-}
-
-func (m bookmarkPickerModel) updateOpenBookmark(newOpenBookmark int) tea.Cmd {
-	return func() tea.Msg {
-		return updateOpenBookmarkMsg{newOpenBookmark}
-	}
-}
-
 func (m bookmarkPickerModel) Init() tea.Cmd {
 	return nil
 }
@@ -53,7 +43,7 @@ func (m bookmarkPickerModel) Update(msg tea.Msg) (bookmarkPickerModel, tea.Cmd) 
 		switch msg.String() {
 		case "enter":
 			newOpenBookmark := m.list.Index()
-			cmds = append(cmds, m.updateOpenBookmark(newOpenBookmark))
+			cmds = append(cmds, updateOpenBookmarkCmd(newOpenBookmark))
 
 		case "e":
 			if len(m.list.Items()) > 0 {

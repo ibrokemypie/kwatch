@@ -20,27 +20,6 @@ var (
 	helpStyle    = blurredStyle.Copy()
 )
 
-type editBookmarkMsg struct {
-	bookmarkIndex int
-}
-
-func editBookmarkCmd(index int) tea.Cmd {
-	return func() tea.Msg {
-		return editBookmarkMsg{bookmarkIndex: index}
-	}
-}
-
-type newBookmarkMsg struct{}
-
-func newBookmarkCmd() tea.Msg {
-	return newBookmarkMsg{}
-}
-
-type saveBookmarkMsg struct{}
-
-func saveBookmarkCmd() tea.Msg {
-	return saveBookmarkMsg{}
-}
 
 type bookmarkEditorModel struct {
 	config        *cfg.Config

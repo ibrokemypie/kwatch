@@ -19,19 +19,8 @@ type filePickerModel struct {
 	loading      bool
 }
 
-type initialiseListMsg struct{}
-
-func initialiseListCmd() tea.Msg {
-	return initialiseListMsg{}
-}
-
 func (m filePickerModel) Init() tea.Cmd {
 	return initialiseListCmd
-}
-
-type endListUpdateMsg struct {
-	itemList []list.Item
-	newPath  []string
 }
 
 func (m *filePickerModel) changeDir(path string) tea.Cmd {
@@ -59,8 +48,6 @@ func (m *filePickerModel) changeDir(path string) tea.Cmd {
 func (m *filePickerModel) initialiseListItems() tea.Cmd {
 	return m.changeDir("")
 }
-
-type endFileOpenMsg struct{}
 
 func (m filePickerModel) openFile(filePath string) tea.Cmd {
 	m.loading = true
