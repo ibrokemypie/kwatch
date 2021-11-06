@@ -27,9 +27,7 @@ func (m filePickerModel) Init() tea.Cmd {
 	return initialiseListCmd
 }
 
-func (m *filePickerModel) changeDir(path string) tea.Cmd {
-	m.loading = true
-
+func (m filePickerModel) changeDir(path string) tea.Cmd {
 	var newPath []string
 	if path == "" {
 		newPath = m.currentPath
@@ -49,13 +47,11 @@ func (m *filePickerModel) changeDir(path string) tea.Cmd {
 	}
 }
 
-func (m *filePickerModel) initialiseListItems() tea.Cmd {
+func (m filePickerModel) initialiseListItems() tea.Cmd {
 	return m.changeDir("")
 }
 
 func (m filePickerModel) openFile(filePath string) tea.Cmd {
-	m.loading = true
-
 	return func() tea.Msg {
 		err := file.OpenFile(m.config, m.openBookmark, m.currentPath, filePath)
 		if err != nil {
@@ -101,6 +97,7 @@ func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
 		cmds = append(cmds, clearErrorCmd, m.list.SetItems(msg.itemList))
 
 	case updateOpenBookmarkMsg:
+		m.loading = true
 		m.openBookmark = msg.newOpenBookmark
 		bookmark := m.config.Bookmarks[m.openBookmark]
 		pathString := bookmark.Path
@@ -128,7 +125,17 @@ func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
 		case "enter":
 			i, ok := m.list.SelectedItem().(source.Item)
 			if ok {
+				m.loading = true
 				cmds = append(cmds, m.list.StartSpinner(), m.pickItem(i))
+			}
+
+		case "backspace":
+			for _, item := range m.list.Items() {
+				sourceItem := item.(source.Item)
+				if sourceItem.Path == ".." {
+					m.loading = true
+					cmds = append(cmds, m.list.StartSpinner(), m.pickItem(sourceItem))
+				}
 			}
 
 		case "b":
