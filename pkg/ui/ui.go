@@ -25,6 +25,7 @@ type mainKeyMap struct {
 	ShowFullHelp key.Binding
 	HideFullHelp key.Binding
 	Quit         key.Binding
+	ForceQuit    key.Binding
 }
 
 type mainModel struct {
@@ -132,6 +133,10 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateContents()
 
 	case tea.KeyMsg:
+		if key.Matches(msg, m.keys.ForceQuit) {
+			return m, tea.Quit
+		}
+
 		if !m.currentChild.inputFocused() {
 			switch {
 			case key.Matches(msg, m.keys.ShowFullHelp), key.Matches(msg, m.keys.HideFullHelp):
@@ -179,6 +184,8 @@ func NewProgram(config *cfg.Config, confFilePath string) *tea.Program {
 			key.WithKeys("q"),
 			key.WithHelp("q", "quit"),
 		),
+
+		ForceQuit: key.NewBinding(key.WithKeys("ctrl+c")),
 	}
 
 	m := mainModel{
