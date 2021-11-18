@@ -5,12 +5,20 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
 	"github.com/ibrokemypie/kwatch/pkg/source"
 )
+
+type bookmarkEditorKeymap struct {
+	NextField   key.Binding
+	PrevField   key.Binding
+	Select      key.Binding
+	LeaveEditor key.Binding
+}
 
 var (
 	blurredStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
@@ -35,15 +43,38 @@ type bookmarkEditorModel struct {
 	focusIndex    int
 	width         int
 	height        int
+	keys          bookmarkEditorKeymap
 }
 
-func (m *bookmarkEditorModel) setSize(width, height int) {
+func (m bookmarkEditorModel) ShortHelp() []key.Binding {
+	bindings := []key.Binding{}
+
+	bindings = append(bindings, m.keys.Select, m.keys.NextField, m.keys.PrevField, m.keys.LeaveEditor)
+
+	return bindings
+}
+
+func (m bookmarkEditorModel) FullHelp() [][]key.Binding {
+	bindings := [][]key.Binding{}
+
+	bindings[1] = append(bindings[1], m.keys.Select, m.keys.NextField, m.keys.PrevField, m.keys.LeaveEditor)
+
+	return bindings
+}
+
+func (m bookmarkEditorModel) setSize(width, height int) childModel {
 	m.width = width
 	m.height = height
 
 	for _, input := range m.inputs {
 		input.Width = width
 	}
+
+	return m
+}
+
+func (m bookmarkEditorModel) inputFocused() bool {
+	return true
 }
 
 func (m bookmarkEditorModel) Init() tea.Cmd {
@@ -127,7 +158,7 @@ func (m *bookmarkEditorModel) clearInputs() {
 	}
 }
 
-func (m bookmarkEditorModel) Update(msg tea.Msg) (bookmarkEditorModel, tea.Cmd) {
+func (m bookmarkEditorModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
@@ -159,37 +190,41 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (bookmarkEditorModel, tea.Cmd) 
 		cmds = append(cmds, m.updateInputStyles())
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			cmds = append(cmds, changeViewCmd(bookmarkPicker))
+		switch {
+		case key.Matches(msg, m.keys.LeaveEditor):
+			cmds = append(cmds, changeViewCmd("bookmarkPicker"))
 
-		case "tab", "shift+tab", "enter", "up", "down":
-			s := msg.String()
-
-			// Pressed enter on submit button
-			if s == "enter" && m.focusIndex == m.inputCount-1 {
-				cmds = append(cmds, m.saveBookmark())
-			}
-
-			if s == "enter" && m.focusIndex == m.inputCount {
-				cmds = append(cmds, changeViewCmd(bookmarkPicker))
-			}
-
-			// Cycle indexes
-			if s == "up" || s == "shift+tab" {
-				m.focusIndex--
-			} else {
-				m.focusIndex++
-			}
+		case key.Matches(msg, m.keys.NextField):
+			m.focusIndex++
 
 			if m.focusIndex > m.inputCount {
 				m.focusIndex = 0
-			} else if m.focusIndex < 0 {
+			}
+
+		case key.Matches(msg, m.keys.PrevField):
+			m.focusIndex--
+
+			if m.focusIndex < 0 {
 				m.focusIndex = m.inputCount
 			}
 
-			cmds = append(cmds, m.updateInputStyles())
+		case key.Matches(msg, m.keys.Select):
+			switch m.focusIndex {
+			case m.inputCount - 1:
+				cmds = append(cmds, m.saveBookmark())
+
+			case m.inputCount:
+				cmds = append(cmds, changeViewCmd("bookmarkPicker"))
+
+			default:
+				m.focusIndex++
+
+				if m.focusIndex > m.inputCount {
+					m.focusIndex = 0
+				}
+			}
 		}
+		cmds = append(cmds, m.updateInputStyles())
 	}
 
 	cmd = m.updateInputs(msg)
@@ -252,7 +287,7 @@ func (m bookmarkEditorModel) View() string {
 	}
 	buttons = append(buttons, cancelView)
 
-	buttonsView := lipgloss.JoinHorizontal(lipgloss.Center, buttons...)
+	buttonsView := lipgloss.NewStyle().MarginLeft(1).Render(lipgloss.JoinHorizontal(lipgloss.Center, buttons...))
 	availHeight -= lipgloss.Height(buttonsView)
 
 	inputsView := lipgloss.NewStyle().Height(availHeight).Render(m.inputsView())
@@ -265,11 +300,34 @@ func (m bookmarkEditorModel) View() string {
 }
 
 func newBookmarkEditor(config *cfg.Config) bookmarkEditorModel {
+	keys := bookmarkEditorKeymap{
+		Select: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select/next"),
+		),
+
+		NextField: key.NewBinding(
+			key.WithKeys("down", "tab"),
+			key.WithHelp("↓/tab", "next"),
+		),
+
+		PrevField: key.NewBinding(
+			key.WithKeys("up", "shift+tab"),
+			key.WithHelp("↑/shift+tab", "prev"),
+		),
+
+		LeaveEditor: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "leave editor"),
+		),
+	}
+
 	m := bookmarkEditorModel{
 		config:     config,
 		inputs:     make([]textinput.Model, 4),
 		focusIndex: 0,
 		inputCount: 5,
+		keys:       keys,
 	}
 
 	var t textinput.Model

@@ -24,10 +24,10 @@ func clearErrorCmd() tea.Msg {
 }
 
 type changeViewMsg struct {
-	newView viewName
+	newViewName string
 }
 
-func changeViewCmd(newView viewName) tea.Cmd {
+func changeViewCmd(newView string) tea.Cmd {
 	return func() tea.Msg {
 		return changeViewMsg{newView}
 	}

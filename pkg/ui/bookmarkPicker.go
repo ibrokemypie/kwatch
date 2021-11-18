@@ -1,26 +1,68 @@
 package ui
 
 import (
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
 )
 
+type bookmarkPickerKeymap struct {
+	NewBookmark    key.Binding
+	EditBookmark   key.Binding
+	SelectBookmark key.Binding
+	ShowFilePicker key.Binding
+}
+
 type bookmarkPickerModel struct {
 	config       *cfg.Config
 	openBookmark int
 	list         list.Model
+	keys         bookmarkPickerKeymap
 }
 
-func (m *bookmarkPickerModel) setSize(width, height int) {
+func (m bookmarkPickerModel) ShortHelp() []key.Binding {
+	bindings := []key.Binding{}
+
+	if len(m.list.Items()) > 0 {
+		bindings = append(bindings, m.keys.SelectBookmark, m.keys.EditBookmark)
+	}
+	bindings = append(bindings, m.keys.NewBookmark)
+	bindings = append(bindings, m.list.ShortHelp()...)
+
+	return bindings
+}
+
+func (m bookmarkPickerModel) FullHelp() [][]key.Binding {
+	bindings := m.list.FullHelp()
+
+	bindings[1] = append(bindings[1], m.keys.NewBookmark, m.keys.EditBookmark, m.keys.SelectBookmark)
+
+	return bindings
+}
+
+func (m bookmarkPickerModel) setSize(width, height int) childModel {
 	m.list.SetSize(width, height)
+	return m
+}
+
+func (m bookmarkPickerModel) inputFocused() bool {
+	filterState := m.list.FilterState()
+
+	switch filterState {
+	case list.Filtering:
+		return true
+
+	default:
+		return false
+	}
 }
 
 func (m bookmarkPickerModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m bookmarkPickerModel) Update(msg tea.Msg) (bookmarkPickerModel, tea.Cmd) {
+func (m bookmarkPickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
@@ -41,24 +83,21 @@ func (m bookmarkPickerModel) Update(msg tea.Msg) (bookmarkPickerModel, tea.Cmd) 
 			break
 		}
 
-		switch msg.String() {
-		case "enter":
+		switch {
+		case key.Matches(msg, m.keys.SelectBookmark):
 			newOpenBookmark := m.list.Index()
 			cmds = append(cmds, updateOpenBookmarkCmd(newOpenBookmark))
 
-		case "e":
+		case key.Matches(msg, m.keys.EditBookmark):
 			if len(m.list.Items()) > 0 {
 				cmds = append(cmds, editBookmarkCmd(m.list.Index()))
 			}
 
-		case "n":
+		case key.Matches(msg, m.keys.NewBookmark):
 			cmds = append(cmds, newBookmarkCmd)
 
-		case "b":
-			cmds = append(cmds, changeViewCmd(bookmarkPicker))
-
-		case "f":
-			cmds = append(cmds, changeViewCmd(filePicker))
+		case key.Matches(msg, m.keys.ShowFilePicker):
+			cmds = append(cmds, changeViewCmd("filePicker"))
 		}
 	}
 
@@ -79,14 +118,44 @@ func newBookmarkPicker(config *cfg.Config) bookmarkPickerModel {
 		initialList = append(initialList, bookmark)
 	}
 
+	listModel := list.NewModel(initialList, list.NewDefaultDelegate(), 0, 0)
+	listModel.SetShowPagination(false)
+	listModel.SetShowHelp(false)
+	listModel.DisableQuitKeybindings()
+
+	listModel.KeyMap.ShowFullHelp.SetEnabled(false)
+	listModel.KeyMap.CloseFullHelp.SetEnabled(false)
+
+	listModel.Title = "Pick a bookmark to open."
+
+	keys := bookmarkPickerKeymap{
+		NewBookmark: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "new"),
+		),
+
+		EditBookmark: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit"),
+		),
+
+		SelectBookmark: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select"),
+		),
+
+		ShowFilePicker: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "files"),
+		),
+	}
+
 	m := bookmarkPickerModel{
 		config:       config,
 		openBookmark: config.DefaultBookmark,
-		list:         list.NewModel(initialList, list.NewDefaultDelegate(), 0, 0),
+		list:         listModel,
+		keys:         keys,
 	}
-
-	m.list.Title = "Pick a bookmark to open."
-	m.list.SetShowPagination(false)
 
 	return m
 }

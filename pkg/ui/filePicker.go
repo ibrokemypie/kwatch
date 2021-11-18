@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
@@ -11,16 +12,55 @@ import (
 	"github.com/ibrokemypie/kwatch/pkg/source/remote/http"
 )
 
+type filePickerKeymap struct {
+	SelectFile         key.Binding
+	GoUp               key.Binding
+	ShowBookmarkPicker key.Binding
+}
+
 type filePickerModel struct {
 	config       *cfg.Config
 	openBookmark int
 	currentPath  []string
 	list         list.Model
 	loading      bool
+	keys         filePickerKeymap
 }
 
-func (m *filePickerModel) setSize(width, height int) {
+func (m filePickerModel) ShortHelp() []key.Binding {
+	bindings := []key.Binding{}
+
+	if len(m.list.Items()) > 0 {
+		bindings = append(bindings, m.keys.SelectFile)
+	}
+	bindings = append(bindings, m.list.ShortHelp()...)
+
+	return bindings
+}
+
+func (m filePickerModel) FullHelp() [][]key.Binding {
+	bindings := m.list.FullHelp()
+
+	bindings[1] = append(bindings[1], m.keys.SelectFile, m.keys.GoUp, m.keys.ShowBookmarkPicker)
+
+	return bindings
+}
+
+func (m filePickerModel) setSize(width, height int) childModel {
 	m.list.SetSize(width, height)
+	return m
+}
+
+func (m filePickerModel) inputFocused() bool {
+	filterState := m.list.FilterState()
+
+	switch filterState {
+	case list.Filtering:
+		return true
+
+	default:
+		return false
+	}
 }
 
 func (m filePickerModel) Init() tea.Cmd {
@@ -74,7 +114,7 @@ func (m *filePickerModel) pickItem(i source.Item) tea.Cmd {
 	return nil
 }
 
-func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
+func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
@@ -121,15 +161,15 @@ func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "enter":
+		switch {
+		case key.Matches(msg, m.keys.SelectFile):
 			i, ok := m.list.SelectedItem().(source.Item)
 			if ok {
 				m.loading = true
 				cmds = append(cmds, m.list.StartSpinner(), m.pickItem(i))
 			}
 
-		case "backspace":
+		case key.Matches(msg, m.keys.GoUp):
 			for _, item := range m.list.Items() {
 				sourceItem := item.(source.Item)
 				if sourceItem.Path == ".." {
@@ -138,11 +178,8 @@ func (m filePickerModel) Update(msg tea.Msg) (filePickerModel, tea.Cmd) {
 				}
 			}
 
-		case "b":
-			cmds = append(cmds, changeViewCmd(bookmarkPicker))
-
-		case "f":
-			cmds = append(cmds, changeViewCmd(filePicker))
+		case key.Matches(msg, m.keys.ShowBookmarkPicker):
+			cmds = append(cmds, changeViewCmd("bookmarkPicker"))
 		}
 
 	case tea.MouseMsg:
@@ -182,16 +219,40 @@ func newFilePicker(config *cfg.Config) filePickerModel {
 		initialPath = strings.Split(strings.TrimPrefix(pathString, "/"), "/")
 	}
 
+	listModel := list.NewModel([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	listModel.SetShowPagination(false)
+	listModel.SetShowHelp(false)
+	listModel.DisableQuitKeybindings()
+
+	listModel.KeyMap.ShowFullHelp.SetEnabled(false)
+	listModel.KeyMap.CloseFullHelp.SetEnabled(false)
+	
+
+	listModel.Title = defaultBookmark.Title()
+
+	keys := filePickerKeymap{
+		SelectFile: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select"),
+		),
+		GoUp: key.NewBinding(
+			key.WithKeys("backspace"),
+			key.WithHelp("backspace", "up directory"),
+		),
+		ShowBookmarkPicker: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "bookmarks"),
+		),
+	}
+
 	m := filePickerModel{
 		config:       config,
 		openBookmark: config.DefaultBookmark,
 		currentPath:  initialPath,
-		list:         list.NewModel([]list.Item{}, list.NewDefaultDelegate(), 0, 0),
+		list:         listModel,
 		loading:      false,
+		keys:         keys,
 	}
-
-	m.list.Title = defaultBookmark.Title()
-	m.list.SetShowPagination(false)
 
 	return m
 }
