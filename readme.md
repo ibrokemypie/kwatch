@@ -6,6 +6,15 @@ built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)
 
 includes bookmarking of servers/locations, fuzzy filtering and in-app configuration.
 
+## dependencies
+
+- go (build)
+- mpv
+
+## install latest version
+
+``go install github.com/ibrokemypie/kwatch/cmd/kwatch@latest``
+
 ## todo
 
 - more backends (nginx, apache, ftp, filesystem)
