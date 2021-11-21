@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"net/url"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -90,7 +89,7 @@ func (m *bookmarkEditorModel) updateInputs(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *bookmarkEditorModel) saveBookmark() tea.Cmd {
+func (m bookmarkEditorModel) saveBookmark() tea.Cmd {
 	addressURL, err := url.Parse(m.inputs[0].Value())
 	if err != nil {
 		return errorCmd(err)
@@ -100,25 +99,9 @@ func (m *bookmarkEditorModel) saveBookmark() tea.Cmd {
 		return errorCmd(fmt.Errorf("Address requires scheme (http/https)"))
 	}
 
-	addressURL.Path = ""
-	addressURL.RawQuery = ""
-	addressURL.User = nil
-	addressURL.Fragment = ""
-	addressURL.Host = strings.TrimSuffix(addressURL.Host, "/")
-
-	path := m.inputs[1].Value()
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	path = strings.TrimSuffix(path, "/")
-
-	newBookmark := source.Bookmark{
-		Backend:  "caddy",
-		Address:  addressURL.String(),
-		Path:     path,
-		Username: m.inputs[2].Value(),
-		Password: m.inputs[3].Value(),
+	newBookmark, err := source.NewBookmark(addressURL, m.inputs[1].Value(), m.inputs[2].Value(), m.inputs[3].Value())
+	if err != nil {
+		return errorCmd(err)
 	}
 
 	if m.createNew {
