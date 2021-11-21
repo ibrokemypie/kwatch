@@ -26,11 +26,11 @@ func (b Bookmark) Title() string {
 }
 
 func (b Bookmark) Description() string {
-	return string(b.Backend)
+	return ""
 }
 
 func (b Bookmark) FilterValue() string {
-	return b.Description() + b.Title()
+	return b.Title()
 }
 
 func NewBookmark(address *url.URL, path, username, password string) (Bookmark, error) {
