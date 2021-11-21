@@ -41,9 +41,8 @@ func (m bookmarkPickerModel) FullHelp() [][]key.Binding {
 	return bindings
 }
 
-func (m bookmarkPickerModel) setSize(width, height int) childModel {
+func (m *bookmarkPickerModel) setSize(width, height int) {
 	m.list.SetSize(width, height)
-	return m
 }
 
 func (m bookmarkPickerModel) inputFocused() bool {
@@ -97,13 +96,13 @@ func (m bookmarkPickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 			cmds = append(cmds, newBookmarkCmd)
 
 		case key.Matches(msg, m.keys.ShowFilePicker):
-			cmds = append(cmds, changeViewCmd("filePicker"))
+			cmds = append(cmds, openBookmarkPickerCmd)
 		}
 	}
 
 	m.list, cmd = m.list.Update(msg)
 	cmds = append(cmds, cmd)
-	return m, tea.Batch(cmds...)
+	return &m, tea.Batch(cmds...)
 }
 
 func (m bookmarkPickerModel) View() string {
@@ -112,7 +111,7 @@ func (m bookmarkPickerModel) View() string {
 	return view
 }
 
-func newBookmarkPicker(config *cfg.Config) bookmarkPickerModel {
+func newBookmarkPicker(config *cfg.Config) *bookmarkPickerModel {
 	initialList := []list.Item{}
 	for _, bookmark := range config.Bookmarks {
 		initialList = append(initialList, bookmark)
@@ -157,5 +156,5 @@ func newBookmarkPicker(config *cfg.Config) bookmarkPickerModel {
 		keys:         keys,
 	}
 
-	return m
+	return &m
 }

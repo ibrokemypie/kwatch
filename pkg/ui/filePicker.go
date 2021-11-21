@@ -19,12 +19,12 @@ type filePickerKeymap struct {
 }
 
 type filePickerModel struct {
-	config       *cfg.Config
-	openBookmark int
-	currentPath  []string
-	list         list.Model
-	loading      bool
-	keys         filePickerKeymap
+	config            *cfg.Config
+	openBookmarkIndex int
+	currentPath       []string
+	list              list.Model
+	loading           bool
+	keys              filePickerKeymap
 }
 
 func (m filePickerModel) ShortHelp() []key.Binding {
@@ -46,9 +46,8 @@ func (m filePickerModel) FullHelp() [][]key.Binding {
 	return bindings
 }
 
-func (m filePickerModel) setSize(width, height int) childModel {
+func (m *filePickerModel) setSize(width, height int) {
 	m.list.SetSize(width, height)
-	return m
 }
 
 func (m filePickerModel) inputFocused() bool {
@@ -64,7 +63,11 @@ func (m filePickerModel) inputFocused() bool {
 }
 
 func (m filePickerModel) Init() tea.Cmd {
-	return initialiseListCmd
+	if len(m.config.Bookmarks) > 0 {
+		return updateOpenBookmarkCmd(m.config.DefaultBookmark)
+	}
+
+	return nil
 }
 
 func (m filePickerModel) changeDir(path string) tea.Cmd {
@@ -78,7 +81,7 @@ func (m filePickerModel) changeDir(path string) tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		itemList, err := http.GetItems(m.config, m.openBookmark, newPath)
+		itemList, err := http.GetItems(m.config, m.openBookmarkIndex, newPath)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -87,13 +90,13 @@ func (m filePickerModel) changeDir(path string) tea.Cmd {
 	}
 }
 
-func (m filePickerModel) initialiseListItems() tea.Cmd {
+func (m filePickerModel) initialiseFileList() tea.Cmd {
 	return m.changeDir("")
 }
 
 func (m filePickerModel) openFile(filePath string) tea.Cmd {
 	return func() tea.Msg {
-		err := file.OpenFile(m.config, m.openBookmark, m.currentPath, filePath)
+		err := file.OpenFile(m.config, m.openBookmarkIndex, m.currentPath, filePath)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -102,7 +105,7 @@ func (m filePickerModel) openFile(filePath string) tea.Cmd {
 	}
 }
 
-func (m *filePickerModel) pickItem(i source.Item) tea.Cmd {
+func (m filePickerModel) pickItem(i source.Item) tea.Cmd {
 	switch i.ListingType {
 	case "dir":
 		return m.changeDir(i.Path)
@@ -123,29 +126,27 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 		m.list.StopSpinner()
 		m.loading = false
 
-	case initialiseListMsg:
-		cmds = append(cmds, m.list.StartSpinner(), m.initialiseListItems())
-
 	case endListUpdateMsg:
 		m.list.StopSpinner()
 		m.list.ResetFilter()
 		m.list.ResetSelected()
 		m.loading = false
-		m.list.Title = m.config.Bookmarks[m.openBookmark].Address + "/" + strings.Join(msg.newPath, "/")
+		m.list.Title = m.config.Bookmarks[m.openBookmarkIndex].Address + "/" + strings.Join(msg.newPath, "/")
 		m.currentPath = msg.newPath
 
 		cmds = append(cmds, clearErrorCmd, m.list.SetItems(msg.itemList))
 
 	case updateOpenBookmarkMsg:
 		m.loading = true
-		m.openBookmark = msg.newOpenBookmark
-		bookmark := m.config.Bookmarks[m.openBookmark]
+		m.list.SetItems([]list.Item{})
+		m.openBookmarkIndex = msg.newOpenBookmark
+		bookmark := m.config.Bookmarks[m.openBookmarkIndex]
 		pathString := bookmark.Path
 		m.list.Title = bookmark.Address + pathString
 
 		m.currentPath = strings.Split(strings.TrimPrefix(pathString, "/"), "/")
 
-		cmds = append(cmds, initialiseListCmd)
+		cmds = append(cmds, m.list.StartSpinner(), m.initialiseFileList())
 
 	case endFileOpenMsg:
 		m.list.StopSpinner()
@@ -179,7 +180,7 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.ShowBookmarkPicker):
-			cmds = append(cmds, changeViewCmd("bookmarkPicker"))
+			cmds = append(cmds, openBookmarkPickerCmd)
 		}
 
 	case tea.MouseMsg:
@@ -199,7 +200,7 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 
 	m.list, cmd = m.list.Update(msg)
 	cmds = append(cmds, cmd)
-	return m, tea.Batch(cmds...)
+	return &m, tea.Batch(cmds...)
 }
 
 func (m filePickerModel) View() string {
@@ -208,17 +209,7 @@ func (m filePickerModel) View() string {
 	return view
 }
 
-func newFilePicker(config *cfg.Config) filePickerModel {
-	defaultBookmark := source.Bookmark{}
-	initialPath := []string{}
-
-	if len(config.Bookmarks) > 0 {
-		defaultBookmark = config.Bookmarks[config.DefaultBookmark]
-
-		pathString := defaultBookmark.Path
-		initialPath = strings.Split(strings.TrimPrefix(pathString, "/"), "/")
-	}
-
+func newFilePicker(config *cfg.Config) *filePickerModel {
 	listModel := list.NewModel([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	listModel.SetShowPagination(false)
 	listModel.SetShowHelp(false)
@@ -226,9 +217,6 @@ func newFilePicker(config *cfg.Config) filePickerModel {
 
 	listModel.KeyMap.ShowFullHelp.SetEnabled(false)
 	listModel.KeyMap.CloseFullHelp.SetEnabled(false)
-	
-
-	listModel.Title = defaultBookmark.Title()
 
 	keys := filePickerKeymap{
 		SelectFile: key.NewBinding(
@@ -246,13 +234,11 @@ func newFilePicker(config *cfg.Config) filePickerModel {
 	}
 
 	m := filePickerModel{
-		config:       config,
-		openBookmark: config.DefaultBookmark,
-		currentPath:  initialPath,
-		list:         listModel,
-		loading:      false,
-		keys:         keys,
+		config:  config,
+		list:    listModel,
+		loading: false,
+		keys:    keys,
 	}
 
-	return m
+	return &m
 }

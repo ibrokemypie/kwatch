@@ -23,16 +23,6 @@ func clearErrorCmd() tea.Msg {
 	return clearErrorMsg{}
 }
 
-type changeViewMsg struct {
-	newViewName string
-}
-
-func changeViewCmd(newView string) tea.Cmd {
-	return func() tea.Msg {
-		return changeViewMsg{newView}
-	}
-}
-
 type updateOpenBookmarkMsg struct {
 	newOpenBookmark int
 }
@@ -65,15 +55,15 @@ func saveBookmarkCmd() tea.Msg {
 	return saveBookmarkMsg{}
 }
 
-type initialiseListMsg struct{}
-
-func initialiseListCmd() tea.Msg {
-	return initialiseListMsg{}
-}
-
 type endListUpdateMsg struct {
 	itemList []list.Item
 	newPath  []string
 }
 
 type endFileOpenMsg struct{}
+
+type openBookmarkPickerMsg struct{}
+
+func openBookmarkPickerCmd() tea.Msg {
+	return openBookmarkPickerMsg{}
+}

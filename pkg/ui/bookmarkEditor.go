@@ -24,7 +24,6 @@ var (
 	blurredStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#dddddd"})
 	focusedStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"})
 	cursorStyle        = focusedStyle.Copy()
-	helpStyle          = blurredStyle.Copy()
 	focusedButtonStyle = focusedStyle.Copy().Padding(0, 1)
 	blurredButtonStyle = blurredStyle.Copy().Padding(0, 1)
 	titleBarStyle      = lipgloss.NewStyle().Padding(0, 0, 1, 2)
@@ -62,15 +61,13 @@ func (m bookmarkEditorModel) FullHelp() [][]key.Binding {
 	return bindings
 }
 
-func (m bookmarkEditorModel) setSize(width, height int) childModel {
+func (m *bookmarkEditorModel) setSize(width, height int) {
 	m.width = width
 	m.height = height
 
 	for _, input := range m.inputs {
 		input.Width = width
 	}
-
-	return m
 }
 
 func (m bookmarkEditorModel) inputFocused() bool {
@@ -192,7 +189,7 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.LeaveEditor):
-			cmds = append(cmds, changeViewCmd("bookmarkPicker"))
+			cmds = append(cmds, openBookmarkPickerCmd)
 
 		case key.Matches(msg, m.keys.NextField):
 			m.focusIndex++
@@ -214,7 +211,7 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 				cmds = append(cmds, m.saveBookmark())
 
 			case m.inputCount:
-				cmds = append(cmds, changeViewCmd("bookmarkPicker"))
+				cmds = append(cmds, openBookmarkPickerCmd)
 
 			default:
 				m.focusIndex++
@@ -229,17 +226,15 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 
 	cmd = m.updateInputs(msg)
 	cmds = append(cmds, cmd)
-	return m, tea.Batch(cmds...)
+	return &m, tea.Batch(cmds...)
 }
 
 func (m bookmarkEditorModel) inputsView() string {
-	var (
-		sections []string
-	)
+	var sections = make([]string, len(m.inputs))
 
-	for _, input := range m.inputs {
-		inputView := lipgloss.NewStyle().Padding(0, 0, 0, 2).Render(input.View())
-		sections = append(sections, inputView)
+	for i := range m.inputs {
+		inputView := lipgloss.NewStyle().Padding(0, 0, 0, 2).Render(m.inputs[i].View())
+		sections[i] = inputView
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -247,7 +242,6 @@ func (m bookmarkEditorModel) inputsView() string {
 
 func (m bookmarkEditorModel) titleView() string {
 	var title string
-	var view string
 
 	if m.createNew {
 		title = "New Bookmark"
@@ -255,9 +249,7 @@ func (m bookmarkEditorModel) titleView() string {
 		title = m.config.Bookmarks[m.bookmarkIndex].Title()
 	}
 
-	view += titleStyle.Render(title)
-
-	return titleBarStyle.Render(view)
+	return titleBarStyle.Render(titleStyle.Render(title))
 }
 
 func (m bookmarkEditorModel) View() string {
@@ -299,7 +291,7 @@ func (m bookmarkEditorModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func newBookmarkEditor(config *cfg.Config) bookmarkEditorModel {
+func newBookmarkEditor(config *cfg.Config) *bookmarkEditorModel {
 	keys := bookmarkEditorKeymap{
 		Select: key.NewBinding(
 			key.WithKeys("enter"),
@@ -362,5 +354,5 @@ func newBookmarkEditor(config *cfg.Config) bookmarkEditorModel {
 		m.inputs[i] = t
 	}
 
-	return m
+	return &m
 }
