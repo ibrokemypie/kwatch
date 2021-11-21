@@ -1,4 +1,4 @@
-package source
+package bookmark
 
 import (
 	"fmt"
@@ -6,12 +6,19 @@ import (
 	"strings"
 )
 
+type BackendType int
+
+const (
+	HTTP BackendType = iota
+)
+
 type Bookmark struct {
-	Backend  string
-	Address  string
-	Path     string
-	Username string
-	Password string
+	Backend    BackendType
+	Address    string
+	Path       string
+	Username   string
+	Password   string
+	FileViewer string
 }
 
 func (b Bookmark) Title() string {
@@ -19,7 +26,7 @@ func (b Bookmark) Title() string {
 }
 
 func (b Bookmark) Description() string {
-	return b.Backend
+	return string(b.Backend)
 }
 
 func (b Bookmark) FilterValue() string {
@@ -27,11 +34,11 @@ func (b Bookmark) FilterValue() string {
 }
 
 func NewBookmark(address *url.URL, path, username, password string) (Bookmark, error) {
-	var backend string
+	var backend BackendType
 
 	switch address.Scheme {
 	case "http", "https":
-		backend = "caddy"
+		backend = HTTP
 
 	default:
 		return Bookmark{}, fmt.Errorf("Unsupported backend: %s", address.Scheme)
@@ -43,16 +50,14 @@ func NewBookmark(address *url.URL, path, username, password string) (Bookmark, e
 	address.Fragment = ""
 	address.Host = strings.TrimSuffix(address.Host, "/")
 
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
 	path = strings.TrimSuffix(path, "/")
 
 	return Bookmark{
-		Backend:  backend,
-		Address:  address.String(),
-		Path:     path,
-		Username: username,
-		Password: password,
+		Backend:    backend,
+		Address:    address.String(),
+		Path:       path,
+		Username:   username,
+		Password:   password,
+		FileViewer: "mpv",
 	}, nil
 }

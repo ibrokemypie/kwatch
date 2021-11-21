@@ -57,7 +57,6 @@ func saveBookmarkCmd() tea.Msg {
 
 type endListUpdateMsg struct {
 	itemList []list.Item
-	newPath  []string
 }
 
 type endFileOpenMsg struct{}

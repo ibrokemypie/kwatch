@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
-	"github.com/ibrokemypie/kwatch/pkg/source"
+	"github.com/ibrokemypie/kwatch/pkg/source/bookmark"
 )
 
 type bookmarkEditorKeymap struct {
@@ -99,15 +99,15 @@ func (m bookmarkEditorModel) saveBookmark() tea.Cmd {
 		return errorCmd(fmt.Errorf("Address requires scheme (http/https)"))
 	}
 
-	newBookmark, err := source.NewBookmark(addressURL, m.inputs[1].Value(), m.inputs[2].Value(), m.inputs[3].Value())
+	newBookmark, err := bookmark.NewBookmark(addressURL, m.inputs[1].Value(), m.inputs[2].Value(), m.inputs[3].Value())
 	if err != nil {
 		return errorCmd(err)
 	}
 
 	if m.createNew {
-		m.config.Bookmarks = append(m.config.Bookmarks, newBookmark)
+		m.config.AddBookmark(newBookmark)
 	} else {
-		m.config.Bookmarks[m.bookmarkIndex] = newBookmark
+		m.config.UpdateBookmark(m.bookmarkIndex, newBookmark)
 	}
 
 	return saveBookmarkCmd
@@ -159,7 +159,7 @@ func (m bookmarkEditorModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 		m.createNew = false
 		m.clearInputs()
 
-		bookmark := m.config.Bookmarks[m.bookmarkIndex]
+		bookmark := m.config.GetBookmark(m.bookmarkIndex)
 
 		m.inputs[0].SetValue(bookmark.Address)
 		m.inputs[1].SetValue(bookmark.Path)
@@ -229,7 +229,7 @@ func (m bookmarkEditorModel) titleView() string {
 	if m.createNew {
 		title = "New Bookmark"
 	} else {
-		title = m.config.Bookmarks[m.bookmarkIndex].Title()
+		title = m.config.GetBookmark(m.bookmarkIndex).Title()
 	}
 
 	return titleBarStyle.Render(titleStyle.Render(title))

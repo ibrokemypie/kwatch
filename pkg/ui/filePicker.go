@@ -1,15 +1,12 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
-	"github.com/ibrokemypie/kwatch/pkg/file"
 	"github.com/ibrokemypie/kwatch/pkg/source"
-	"github.com/ibrokemypie/kwatch/pkg/source/remote/http"
+	"github.com/ibrokemypie/kwatch/pkg/source/sourceItem"
 )
 
 type filePickerKeymap struct {
@@ -19,12 +16,11 @@ type filePickerKeymap struct {
 }
 
 type filePickerModel struct {
-	config            *cfg.Config
-	openBookmarkIndex int
-	currentPath       []string
-	list              list.Model
-	loading           bool
-	keys              filePickerKeymap
+	config        *cfg.Config
+	currentSource source.Source
+	list          list.Model
+	loading       bool
+	keys          filePickerKeymap
 }
 
 func (m filePickerModel) ShortHelp() []key.Binding {
@@ -63,40 +59,40 @@ func (m filePickerModel) inputFocused() bool {
 }
 
 func (m filePickerModel) Init() tea.Cmd {
-	if len(m.config.Bookmarks) > 0 {
-		return updateOpenBookmarkCmd(m.config.DefaultBookmark)
+	if m.config.GetDefaultBookmark() != -1 {
+		return updateOpenBookmarkCmd(m.config.GetDefaultBookmark())
 	}
 
 	return nil
 }
 
 func (m filePickerModel) changeDir(path string) tea.Cmd {
-	var newPath []string
-	if path == "" {
-		newPath = m.currentPath
-	} else if path == ".." {
-		newPath = m.currentPath[:len(m.currentPath)-1]
-	} else {
-		newPath = append(m.currentPath, path)
-	}
+	m.currentSource.ChangeDir(path)
 
 	return func() tea.Msg {
-		itemList, err := http.GetItems(m.config, m.openBookmarkIndex, newPath)
+		itemList, err := m.currentSource.GetItems()
 		if err != nil {
 			return errorMsg{err}
 		}
 
-		return endListUpdateMsg{itemList, newPath}
+		return endListUpdateMsg{itemList}
 	}
 }
 
 func (m filePickerModel) initialiseFileList() tea.Cmd {
-	return m.changeDir("")
+	return func() tea.Msg {
+		itemList, err := m.currentSource.GetItems()
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		return endListUpdateMsg{itemList}
+	}
 }
 
 func (m filePickerModel) openFile(filePath string) tea.Cmd {
 	return func() tea.Msg {
-		err := file.OpenFile(m.config, m.openBookmarkIndex, m.currentPath, filePath)
+		err := m.currentSource.OpenFile(filePath)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -105,7 +101,7 @@ func (m filePickerModel) openFile(filePath string) tea.Cmd {
 	}
 }
 
-func (m filePickerModel) pickItem(i source.Item) tea.Cmd {
+func (m filePickerModel) pickItem(i sourceItem.Item) tea.Cmd {
 	switch i.ListingType {
 	case "dir":
 		return m.changeDir(i.Path)
@@ -126,27 +122,26 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 		m.list.StopSpinner()
 		m.loading = false
 
+	case updateOpenBookmarkMsg:
+		m.loading = true
+		m.list.SetItems([]list.Item{})
+
+		bookmark := m.config.GetBookmark(msg.newOpenBookmark)
+		m.currentSource = source.NewSource(bookmark)
+
+		pathString := bookmark.Path
+		m.list.Title = bookmark.Address + pathString
+
+		cmds = append(cmds, m.list.StartSpinner(), m.initialiseFileList())
+
 	case endListUpdateMsg:
 		m.list.StopSpinner()
 		m.list.ResetFilter()
 		m.list.ResetSelected()
 		m.loading = false
-		m.list.Title = m.config.Bookmarks[m.openBookmarkIndex].Address + "/" + strings.Join(msg.newPath, "/")
-		m.currentPath = msg.newPath
+		m.list.Title = m.currentSource.GetAddressString() + "/" + m.currentSource.GetPathString()
 
 		cmds = append(cmds, clearErrorCmd, m.list.SetItems(msg.itemList))
-
-	case updateOpenBookmarkMsg:
-		m.loading = true
-		m.list.SetItems([]list.Item{})
-		m.openBookmarkIndex = msg.newOpenBookmark
-		bookmark := m.config.Bookmarks[m.openBookmarkIndex]
-		pathString := bookmark.Path
-		m.list.Title = bookmark.Address + pathString
-
-		m.currentPath = strings.Split(strings.TrimPrefix(pathString, "/"), "/")
-
-		cmds = append(cmds, m.list.StartSpinner(), m.initialiseFileList())
 
 	case endFileOpenMsg:
 		m.list.StopSpinner()
@@ -164,7 +159,7 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, m.keys.SelectFile):
-			i, ok := m.list.SelectedItem().(source.Item)
+			i, ok := m.list.SelectedItem().(sourceItem.Item)
 			if ok {
 				m.loading = true
 				cmds = append(cmds, m.list.StartSpinner(), m.pickItem(i))
@@ -172,7 +167,7 @@ func (m filePickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.GoUp):
 			for _, item := range m.list.Items() {
-				sourceItem := item.(source.Item)
+				sourceItem := item.(sourceItem.Item)
 				if sourceItem.Path == ".." {
 					m.loading = true
 					cmds = append(cmds, m.list.StartSpinner(), m.pickItem(sourceItem))

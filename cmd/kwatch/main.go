@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/ibrokemypie/kwatch/pkg/cfg"
-	"github.com/ibrokemypie/kwatch/pkg/source"
 	"github.com/ibrokemypie/kwatch/pkg/ui"
 )
 
@@ -32,14 +31,6 @@ func main() {
 		if !os.IsNotExist(err) {
 			log.Fatal(err)
 		}
-	}
-
-	if config.Bookmarks == nil {
-		config.Bookmarks = []source.Bookmark{}
-	}
-
-	if len(config.FileViewer) <= 0 {
-		config.FileViewer = "mpv"
 	}
 
 	program := ui.NewProgram(config, confFilePath)

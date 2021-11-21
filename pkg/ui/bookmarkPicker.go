@@ -15,10 +15,9 @@ type bookmarkPickerKeymap struct {
 }
 
 type bookmarkPickerModel struct {
-	config       *cfg.Config
-	openBookmark int
-	list         list.Model
-	keys         bookmarkPickerKeymap
+	config *cfg.Config
+	list   list.Model
+	keys   bookmarkPickerKeymap
 }
 
 func (m bookmarkPickerModel) ShortHelp() []key.Binding {
@@ -68,14 +67,11 @@ func (m bookmarkPickerModel) Update(msg tea.Msg) (childModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case saveBookmarkMsg:
 		bookmarkList := []list.Item{}
-		for _, bookmark := range m.config.Bookmarks {
+		for _, bookmark := range m.config.GetBookmarks() {
 			bookmarkList = append(bookmarkList, bookmark)
 		}
 
 		cmds = append(cmds, m.list.SetItems(bookmarkList))
-
-	case updateOpenBookmarkMsg:
-		m.openBookmark = msg.newOpenBookmark
 
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
@@ -113,7 +109,7 @@ func (m bookmarkPickerModel) View() string {
 
 func newBookmarkPicker(config *cfg.Config) *bookmarkPickerModel {
 	initialList := []list.Item{}
-	for _, bookmark := range config.Bookmarks {
+	for _, bookmark := range config.GetBookmarks() {
 		initialList = append(initialList, bookmark)
 	}
 
@@ -150,10 +146,9 @@ func newBookmarkPicker(config *cfg.Config) *bookmarkPickerModel {
 	}
 
 	m := bookmarkPickerModel{
-		config:       config,
-		openBookmark: config.DefaultBookmark,
-		list:         listModel,
-		keys:         keys,
+		config: config,
+		list:   listModel,
+		keys:   keys,
 	}
 
 	return &m

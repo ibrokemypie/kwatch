@@ -199,7 +199,7 @@ func NewProgram(config *cfg.Config, confFilePath string) *tea.Program {
 		newBookmarkEditor(config),
 	}
 	currentChild := bookmarkPicker
-	if len(config.Bookmarks) > 0 {
+	if config.GetDefaultBookmark() != -1 {
 		currentChild = filePicker
 	}
 

@@ -4,18 +4,45 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ibrokemypie/kwatch/pkg/source"
+	"github.com/ibrokemypie/kwatch/pkg/source/bookmark"
 	"github.com/pelletier/go-toml/v2"
 )
 
 type Config struct {
-	Bookmarks       []source.Bookmark
+	Bookmarks       []bookmark.Bookmark
 	DefaultBookmark int
-	FileViewer      string
 }
 
-func (config *Config) WriteConfig(confFilePath string) error {
-	bytes, err := toml.Marshal(config)
+func (cfg Config) GetBookmarks() []bookmark.Bookmark {
+	return cfg.Bookmarks
+}
+
+func (cfg Config) GetDefaultBookmark() int {
+	if len(cfg.Bookmarks) > 0 {
+		return cfg.DefaultBookmark
+	} else {
+		return -1
+	}
+}
+
+func (cfg *Config) SetDefaultBookmark(newDefaultBookmark int) {
+	cfg.DefaultBookmark = newDefaultBookmark
+}
+
+func (cfg Config) GetBookmark(index int) bookmark.Bookmark {
+	return cfg.Bookmarks[index]
+}
+
+func (cfg *Config) AddBookmark(b bookmark.Bookmark) {
+	cfg.Bookmarks = append(cfg.Bookmarks, b)
+}
+
+func (cfg *Config) UpdateBookmark(index int, b bookmark.Bookmark) {
+	cfg.Bookmarks[index] = b
+}
+
+func (cfg Config) WriteConfig(confFilePath string) error {
+	bytes, err := toml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
@@ -39,13 +66,13 @@ func (config *Config) WriteConfig(confFilePath string) error {
 	return nil
 }
 
-func (config *Config) ReadConfig(confFilePath string) error {
+func (cfg *Config) ReadConfig(confFilePath string) error {
 	bytes, err := os.ReadFile(confFilePath)
 	if err != nil {
 		return err
 	}
 
-	err = toml.Unmarshal(bytes, config)
+	err = toml.Unmarshal(bytes, cfg)
 	if err != nil {
 		return err
 	}
