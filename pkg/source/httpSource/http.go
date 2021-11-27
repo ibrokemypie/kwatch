@@ -3,7 +3,6 @@ package httpSource
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -93,7 +92,6 @@ func (b Backend) GetItems() ([]list.Item, error) {
 }
 
 func (b Backend) GetPathString() string {
-	ioutil.WriteFile("output.txt", []byte(fmt.Sprint(b.currentPath)), 0644)
 	return strings.Join(b.currentPath, "/")
 }
 
